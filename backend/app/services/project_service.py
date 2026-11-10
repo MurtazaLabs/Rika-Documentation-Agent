@@ -6,12 +6,14 @@ Projects are the isolation boundary: every other table carries a
 
 from __future__ import annotations
 
+import shutil
 import uuid
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.schemas.project import ProjectCreate, ProjectUpdate
+from app.config import Settings
 from app.core.exceptions import NotFoundError
 from app.database.models import Project
 
@@ -59,8 +61,14 @@ async def update_project(
     return project
 
 
-async def delete_project(session: AsyncSession, project_id: uuid.UUID) -> None:
-    """Delete a project and, by cascade, everything stored under it."""
+async def delete_project(
+    session: AsyncSession, settings: Settings, project_id: uuid.UUID
+) -> None:
+    """Delete project records, then remove its private on-disk uploads."""
     project = await _require(session, project_id)
+    project_dir = settings.uploads_root / str(project_id)
     await session.delete(project)
     await session.commit()
+    # Only remove files after the database commit succeeds. The path is derived
+    # from a UUID and rooted beneath the configured uploads directory.
+    shutil.rmtree(project_dir, ignore_errors=True)
