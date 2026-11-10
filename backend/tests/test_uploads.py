@@ -278,17 +278,25 @@ async def test_same_path_wins_over_hash_deduplication_and_versions_are_immutable
         assert document is not None
         assert len(versions) == 2
         assert versions[0].storage_path != versions[1].storage_path
-        old_path = app_settings.storage_root / versions[0].storage_path
+        version_paths = [
+            app_settings.storage_root / version.storage_path for version in versions
+        ]
         current_path = app_settings.storage_root / document.stored_path
 
-    assert old_path.read_bytes() == first_bytes
+    assert {path.read_bytes() for path in version_paths} == {first_bytes, second_bytes}
     assert current_path.read_bytes() == second_bytes
 
 
 async def test_windows_reserved_paths_are_rejected(client: AsyncClient) -> None:
     project_id = await create_project(client)
-    for unsafe in ("src/file:stream.txt", "folder/CON.txt", "trailing./file.txt",
-                   "folder/name?.txt", "folder/file. "):
+    unsafe_paths = (
+        "src/file:stream.txt",
+        "folder/CON.txt",
+        "trailing./file.txt",
+        "folder/name?.txt",
+        "folder/file. ",
+    )
+    for unsafe in unsafe_paths:
         response = await client.post(
             f"/api/v1/projects/{project_id}/upload-folder",
             files=[("files", ("safe.txt", b"hello", "text/plain"))],
