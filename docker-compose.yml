@@ -1,0 +1,42 @@
+name: rika
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg17
+    container_name: rika-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-rika}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me}
+      POSTGRES_DB: ${POSTGRES_DB:-rika}
+    # Local-only: the plan requires infrastructure to stay off the network.
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - rika-postgres-data:/var/lib/postgresql/data
+      - ./docker/postgres/init.sql:/docker-entrypoint-initdb.d/00-extensions.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-rika} -d ${POSTGRES_DB:-rika}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    shm_size: 256mb
+
+  redis:
+    image: redis:7-alpine
+    container_name: rika-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--save", "60", "1"]
+    ports:
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - rika-redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  rika-postgres-data:
+  rika-redis-data:

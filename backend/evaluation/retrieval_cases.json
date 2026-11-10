@@ -1,0 +1,194 @@
+{
+  "description": "Curated baseline retrieval cases for the Rika repository. Index the repository as one project, then run backend/evaluation/run_retrieval_eval.py with that project id. Expected evidence is matched by file path, plus symbol/page/line when present.",
+  "cases": [
+    {
+      "id": "hybrid-fusion",
+      "query": "How does Rika combine semantic vector results with keyword search?",
+      "mode": "hybrid",
+      "expected": [
+        {
+          "file_path": "backend/app/retrieval/hybrid.py",
+          "symbol_name": "reciprocal_rank_fusion"
+        },
+        {
+          "file_path": "docs/rika-project-plan.md"
+        }
+      ]
+    },
+    {
+      "id": "vector-index",
+      "query": "Which PostgreSQL index accelerates cosine similarity search over chunk embeddings?",
+      "mode": "hybrid",
+      "expected": [
+        {
+          "file_path": "backend/app/database/migrations/versions/0002_embedding_vectors.py"
+        },
+        {
+          "file_path": "README.md"
+        }
+      ]
+    },
+    {
+      "id": "full-text-column",
+      "query": "How is the full-text search vector kept in sync with chunk content?",
+      "mode": "keyword",
+      "expected": [
+        {
+          "file_path": "backend/app/database/migrations/versions/0003_full_text_search.py"
+        },
+        {
+          "file_path": "backend/app/retrieval/keyword_search.py",
+          "symbol_name": "keyword_search"
+        }
+      ]
+    },
+    {
+      "id": "query-vector-width",
+      "query": "What happens when the embedding server returns a query vector with the wrong dimension?",
+      "mode": "hybrid",
+      "expected": [
+        {
+          "file_path": "backend/app/services/retrieval_service.py",
+          "symbol_name": "_embed_query"
+        }
+      ]
+    },
+    {
+      "id": "ingestion-order",
+      "query": "Why does embedding run before the old chunks are deleted during re-ingestion?",
+      "mode": "hybrid",
+      "expected": [
+        {
+          "file_path": "backend/app/ingestion/pipeline.py",
+          "symbol_name": "_index_document"
+        },
+        {
+          "file_path": "README.md"
+        }
+      ]
+    },
+    {
+      "id": "pdf-pages",
+      "query": "How are PDF page numbers preserved for citations?",
+      "mode": "hybrid",
+      "expected": [
+        {
+          "file_path": "backend/app/ingestion/parsers.py",
+          "symbol_name": "_parse_pdf"
+        }
+      ]
+    },
+    {
+      "id": "archive-safety",
+      "query": "How are uploaded ZIP archives protected against path traversal and oversized extraction?",
+      "mode": "hybrid",
+      "expected": [
+        {
+          "file_path": "backend/app/ingestion/archive.py",
+          "symbol_name": "extract_zip"
+        },
+        {
+          "file_path": "README.md"
+        }
+      ]
+    },
+    {
+      "id": "symbol-chunking",
+      "query": "How does symbol-aware chunking split an oversized class while keeping its symbol name?",
+      "mode": "hybrid",
+      "expected": [
+        {
+          "file_path": "backend/app/code_intelligence/chunking.py",
+          "symbol_name": "chunk_code"
+        },
+        {
+          "file_path": "README.md"
+        }
+      ]
+    },
+    {
+      "id": "metadata-filters",
+      "query": "Which metadata filters can be applied to a retrieval search?",
+      "mode": "hybrid",
+      "expected": [
+        {
+          "file_path": "backend/app/retrieval/filters.py",
+          "symbol_name": "build_sql_conditions"
+        },
+        {
+          "file_path": "backend/app/api/schemas/search.py"
+        }
+      ]
+    },
+    {
+      "id": "project-isolation",
+      "query": "How are document queries kept inside one project?",
+      "mode": "hybrid",
+      "expected": [
+        {
+          "file_path": "backend/app/services/document_service.py",
+          "symbol_name": "list_project_documents"
+        },
+        {
+          "file_path": "backend/app/database/models/document.py"
+        }
+      ]
+    },
+    {
+      "id": "upload-queue",
+      "query": "What does the upload endpoint return before ingestion finishes?",
+      "mode": "hybrid",
+      "expected": [
+        {
+          "file_path": "backend/app/api/routes/uploads.py"
+        },
+        {
+          "file_path": "backend/app/services/upload_service.py",
+          "symbol_name": "ingest_uploads"
+        }
+      ]
+    },
+    {
+      "id": "supported-formats",
+      "query": "Which document and source code formats can Rika ingest?",
+      "mode": "hybrid",
+      "expected": [
+        {
+          "file_path": "backend/app/ingestion/formats.py",
+          "symbol_name": "format_for"
+        },
+        {
+          "file_path": "README.md"
+        }
+      ]
+    },
+    {
+      "id": "duplicate-uploads",
+      "query": "How are duplicate uploads and changed files handled incrementally?",
+      "mode": "hybrid",
+      "expected": [
+        {
+          "file_path": "backend/app/services/upload_service.py",
+          "symbol_name": "register_document"
+        },
+        {
+          "file_path": "README.md"
+        }
+      ]
+    },
+    {
+      "id": "search-endpoint",
+      "query": "Where is the project-scoped search endpoint defined and registered?",
+      "mode": "keyword",
+      "expected": [
+        {
+          "file_path": "backend/app/api/routes/search.py",
+          "symbol_name": "search_project"
+        },
+        {
+          "file_path": "backend/app/api/v1/router.py"
+        }
+      ]
+    }
+  ]
+}

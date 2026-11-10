@@ -1,0 +1,43 @@
+# --- Secrets ---
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+
+# --- Node / frontend ---
+node_modules/
+.next/
+out/
+dist/
+build/
+coverage/
+*.tsbuildinfo
+
+# --- Runtime data (never commit uploaded project material) ---
+storage/
+models/
+
+# --- Local toolchain: portable PostgreSQL + pgvector and its data directory ---
+.tools/
+
+# --- Editors / OS ---
+.vscode/
+.idea/
+Thumbs.db
+Desktop.ini
+*.log
