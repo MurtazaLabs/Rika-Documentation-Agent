@@ -71,4 +71,5 @@ async def delete_project(
     await session.commit()
     # Only remove files after the database commit succeeds. The path is derived
     # from a UUID and rooted beneath the configured uploads directory.
-    shutil.rmtree(project_dir, ignore_errors=True)
+    if project_dir.is_dir():
+        shutil.rmtree(project_dir)
