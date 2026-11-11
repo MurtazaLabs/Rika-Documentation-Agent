@@ -6,7 +6,7 @@ paths and line ranges — running entirely on your machine.
 
 The full specification lives in [`docs/rika-project-plan.md`](docs/rika-project-plan.md).
 
-> **Status: Phases 1–10 complete; Phase 10's chat grounding is not built yet.**
+> **Status: Phases 1–11 complete; Phase 12 packaging is in progress.**
 > Projects, uploads, document parsing, code intelligence, chunking, embedding,
 > ingestion jobs, hybrid retrieval and grounded chat work end to end: every
 > chunk is stored in PostgreSQL with a 1024-dimension vector and indexed with
@@ -713,7 +713,31 @@ cd backend
 | 9 — Frontend | Done: dashboard, project workspaces, file explorer with source preview, search, streaming chat with citation jump-to-line, conversations, settings |
 | 10 — Project intelligence | Done: overview, architecture, code analysis, documentation comparison and bug investigation as an API, an Intelligence tab in the UI that shows every report and opens any finding at its source line, and chat answers that cite those findings |
 | 11 — Hardening | In progress: credential files excluded from the index, per-model concurrency caps, a `--min-recall` evaluation gate; a full-repository Recall@5 measurement is still open |
-| 12 — Packaging | Planned |
+| 12 — Packaging | Done: production frontend build, a `-Production` start mode and a versioned release bundle |
+
+## Packaging
+
+Rika runs as a local production deployment, without the dev server:
+
+```powershell
+.\scripts\package.ps1                                   # build + dist\rika-<version>.zip
+.\scripts\start.ps1 -Production -WithWorker -WithFrontend
+```
+
+`package.ps1` reads the version from `backend\app\__init__.py`, runs the Next.js
+production build (which typechecks) and writes a bundle containing the backend,
+the built UI, the scripts, the Compose file and the docs. It refuses to start
+before `.venv` and `frontend\node_modules` exist; `-SkipBuild` reuses an existing
+build. The version, file count and size are printed at the end.
+
+`start.ps1 -Production` serves that build: uvicorn without `--reload`, and
+`npm run start` for the UI instead of `next dev`.
+
+The bundle deliberately leaves out `.venv`, `node_modules`, `.tools\` and
+`models\`: a receiving machine runs `scripts\setup.ps1`, installs frontend
+dependencies and downloads its own GGUF models. Rika's own processes always run
+natively because the model servers need direct GPU access; the optional Compose
+file covers only PostgreSQL and Redis.
 
 ## Troubleshooting
 

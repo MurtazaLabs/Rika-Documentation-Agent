@@ -11,14 +11,22 @@
 .PARAMETER NoInfrastructure
     Skip docker compose (already running, or managed elsewhere).
 
+.PARAMETER Production
+    Serve the production build instead of the dev servers: uvicorn without
+    --reload and ``npm run start`` (run scripts\package.ps1 first).
+
 .EXAMPLE
     .\scripts\start.ps1 -WithWorker -WithFrontend
+
+.EXAMPLE
+    .\scripts\start.ps1 -Production -WithWorker -WithFrontend
 #>
 [CmdletBinding()]
 param(
     [switch]$WithWorker,
     [switch]$WithFrontend,
-    [switch]$NoInfrastructure
+    [switch]$NoInfrastructure,
+    [switch]$Production
 )
 
 $ErrorActionPreference = "Stop"
@@ -76,9 +84,13 @@ if ($WithFrontend) {
         Write-Warning "npm not found. Install Node.js 20+ to run the UI."
     }
     else {
+        $script = if ($Production) { "start" } else { "dev" }
+        if ($Production -and -not (Test-Path (Join-Path $frontend ".next"))) {
+            Write-Warning "No production build found. Run .\scripts\package.ps1 first."
+        }
         # cmd /c keeps npm.cmd resolvable from a detached window.
         Start-Process -FilePath "cmd.exe" `
-            -ArgumentList "/c npm run dev" `
+            -ArgumentList "/c npm run $script" `
             -WorkingDirectory $frontend
         Write-Host "Next.js UI started in a separate window." -ForegroundColor Cyan
     }
@@ -90,6 +102,10 @@ Write-Host "Health:   http://127.0.0.1:8000/health/ready" -ForegroundColor Green
 if ($WithFrontend) {
     Write-Host "UI:       http://127.0.0.1:3000" -ForegroundColor Green
 }
-Write-Host "Press Ctrl+C to stop." -ForegroundColor DarkGray
-
-& $py -m uvicorn app.main:app --app-dir backend --host 127.0.0.1 --port 8000 --reload
+if ($Production) {
+    Write-Host "Mode:     production (no reload, built UI)" -ForegroundColor DarkGray
+    & $py -m uvicorn app.main:app --app-dir backend --host 127.0.0.1 --port 8000
+}
+else {
+    & $py -m uvicorn app.main:app --app-dir backend --host 127.0.0.1 --port 8000 --reload
+}
