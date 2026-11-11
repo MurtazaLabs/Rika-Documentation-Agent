@@ -243,6 +243,70 @@ async def test_changed_file_at_same_path_is_replaced(
     assert documents == 1
 
 
+async def test_same_path_wins_over_hash_deduplication_and_versions_are_immutable(
+    client: AsyncClient,
+    app_settings: Settings,
+    session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    quiet_queue(monkeypatch)
+    project_id = await create_project(client)
+    first_bytes = b"print('first')\\n"
+    second_bytes = b"print('second')\\n"
+
+    first = await upload(client, project_id, "a.py", first_bytes)
+    second = await upload(client, project_id, "b.py", second_bytes)
+    a_id = first.json()["items"][0]["document"]["id"]
+    b_id = second.json()["items"][0]["document"]["id"]
+
+    # Updating a.py to bytes already present in b.py must update a.py rather
+    # than incorrectly treating the upload as a duplicate of b.py.
+    updated = await upload(client, project_id, "a.py", second_bytes)
+    assert updated.status_code == 201, updated.text
+    item = updated.json()["items"][0]
+    assert item["duplicate"] is False
+    assert item["document"]["id"] == a_id
+    assert a_id != b_id
+
+    async with session_factory() as session:
+        document = await session.get(Document, uuid.UUID(a_id))
+        versions = (
+            await session.scalars(
+                select(FileVersion)
+                .where(FileVersion.document_id == uuid.UUID(a_id))
+                .order_by(FileVersion.created_at)
+            )
+        ).all()
+        assert document is not None
+        assert len(versions) == 2
+        assert versions[0].storage_path != versions[1].storage_path
+        version_paths = [
+            app_settings.storage_root / version.storage_path for version in versions
+        ]
+        current_path = app_settings.storage_root / document.stored_path
+
+    assert {path.read_bytes() for path in version_paths} == {first_bytes, second_bytes}
+    assert current_path.read_bytes() == second_bytes
+
+
+async def test_windows_reserved_paths_are_rejected(client: AsyncClient) -> None:
+    project_id = await create_project(client)
+    unsafe_paths = (
+        "src/file:stream.txt",
+        "folder/CON.txt",
+        "trailing./file.txt",
+        "folder/name?.txt",
+        "folder/file. ",
+    )
+    for unsafe in unsafe_paths:
+        response = await client.post(
+            f"/api/v1/projects/{project_id}/upload-folder",
+            files=[("files", ("safe.txt", b"hello", "text/plain"))],
+            data={"paths": [unsafe]},
+        )
+        assert response.status_code == 422, unsafe
+
+
 async def test_folder_upload_keeps_relative_paths(
     client: AsyncClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -39,6 +39,20 @@ def safe_relative_path(raw: str) -> str:
     if any(ord(character) < 32 for character in candidate):
         raise InvalidUploadError(f"A file path contains control characters: {raw!r}")
 
+    # Reject Windows-invalid characters and NTFS alternate data stream syntax
+    # in every segment, not just the first (drive-qualified) segment.
+    windows_invalid = set('<>:\\"|?*')
+    reserved_names = {"CON", "PRN", "AUX", "NUL", *(f"COM{i}" for i in range(1, 10)), *(f"LPT{i}" for i in range(1, 10))}
+    raw_parts = candidate.split("/")
+    for part in raw_parts:
+        if any(character in windows_invalid for character in part):
+            raise InvalidUploadError(f"A file path contains a Windows-reserved character: {raw!r}")
+        if part.endswith((".", " ")):
+            raise InvalidUploadError(f"A file path segment cannot end in a dot or space: {raw!r}")
+        device_name = part.split(".", 1)[0].upper()
+        if device_name in reserved_names:
+            raise InvalidUploadError(f"A file path contains a reserved Windows device name: {raw!r}")
+
     parts = [part for part in PurePosixPath(candidate).parts if part not in ("", ".")]
     if not parts:
         raise InvalidUploadError(f"A file path has no name: {raw!r}")

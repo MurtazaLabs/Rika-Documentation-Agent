@@ -78,16 +78,14 @@ async def ingest_uploads(
             item.temp_path.unlink(missing_ok=True)
         raise
 
-    outcome = UploadOutcome(documents=[], jobs=[])
-    created: list[tuple[Document, IngestionJob | None, bool]] = []
     try:
-        for item in staged:
-            created.append(await register_document(session, settings, project_id, item))
+        created = await _register_staged_batch(session, settings, project_id, staged)
     except Exception:
         for item in staged:
             item.temp_path.unlink(missing_ok=True)
         raise
 
+    outcome = UploadOutcome(documents=[], jobs=[])
     for document, job, duplicate in created:
         if duplicate:
             outcome.duplicates.append(document)
@@ -144,11 +142,13 @@ async def ingest_archive(
                 item.temp_path.unlink(missing_ok=True)
             raise
 
+        try:
+            created = await _register_staged_batch(session, settings, project_id, staged)
+        except Exception:
+            for item in staged:
+                item.temp_path.unlink(missing_ok=True)
+            raise
         outcome = UploadOutcome(documents=[], jobs=[], skipped=skipped)
-        created = [
-            await register_document(session, settings, project_id, item)
-            for item in staged
-        ]
         for document, job, duplicate in created:
             if duplicate:
                 outcome.duplicates.append(document)
@@ -266,23 +266,46 @@ async def _spool_upload(settings: Settings, upload: UploadFile, name: str) -> Pa
     return path
 
 
+async def _register_staged_batch(
+    session: AsyncSession,
+    settings: Settings,
+    project_id: uuid.UUID,
+    staged: list[StagedUpload],
+) -> list[tuple[Document, IngestionJob | None, bool]]:
+    """Register a request atomically and clean filesystem moves on rollback."""
+    # get_project() may have opened an implicit read transaction.
+    await session.commit()
+    moved_paths: list[Path] = []
+    try:
+        async with session.begin():
+            created = []
+            for item in staged:
+                created.append(
+                    await register_document(
+                        session, settings, project_id, item, moved_paths=moved_paths
+                    )
+                )
+        return created
+    except Exception:
+        for path in moved_paths:
+            path.unlink(missing_ok=True)
+        raise
+
+
 async def register_document(
     session: AsyncSession,
     settings: Settings,
     project_id: uuid.UUID,
     staged: StagedUpload,
+    *,
+    moved_paths: list[Path] | None = None,
 ) -> tuple[Document, IngestionJob | None, bool]:
-    """Create (or refresh) the document row and queue an ingestion job."""
-    existing = await session.scalar(
-        select(Document).where(
-            Document.project_id == project_id,
-            Document.content_hash == staged.content_hash,
-        )
-    )
-    if existing is not None:
-        staged.temp_path.unlink(missing_ok=True)
-        return existing, None, True
+    """Register one staged file inside the caller's transaction."""
+    moved_paths = moved_paths if moved_paths is not None else []
 
+    # Path identity takes precedence over content deduplication. If a path
+    # already exists, an upload with changed bytes must update that document,
+    # even when those bytes happen to exist at another path in the project.
     same_path = await session.scalar(
         select(Document).where(
             Document.project_id == project_id,
@@ -290,7 +313,12 @@ async def register_document(
         )
     )
     if same_path is not None:
-        document = await _replace_contents(session, settings, same_path, staged)
+        if same_path.content_hash == staged.content_hash:
+            staged.temp_path.unlink(missing_ok=True)
+            return same_path, None, True
+        document = await _replace_contents(
+            session, settings, same_path, staged, moved_paths=moved_paths
+        )
         job = IngestionJob(
             project_id=project_id,
             document_id=document.id,
@@ -298,15 +326,25 @@ async def register_document(
             status=JobStatus.QUEUED.value,
         )
         session.add(job)
-        await session.commit()
-        await session.refresh(job)
+        await session.flush()
         return document, job, False
+
+    existing_hash = await session.scalar(
+        select(Document).where(
+            Document.project_id == project_id,
+            Document.content_hash == staged.content_hash,
+        )
+    )
+    if existing_hash is not None:
+        staged.temp_path.unlink(missing_ok=True)
+        return existing_hash, None, True
 
     document_id = uuid.uuid4()
     stored_relative = _stored_relative(project_id, document_id, staged.filename)
     destination = settings.storage_root / stored_relative
     destination.parent.mkdir(parents=True, exist_ok=True)
     shutil.move(str(staged.temp_path), destination)
+    moved_paths.append(destination)
 
     document = Document(
         id=document_id,
@@ -334,9 +372,7 @@ async def register_document(
         status=JobStatus.QUEUED.value,
     )
     session.add(job)
-    await session.commit()
-    await session.refresh(document)
-    await session.refresh(job)
+    await session.flush()
     return document, job, False
 
 
@@ -345,25 +381,37 @@ async def _replace_contents(
     settings: Settings,
     document: Document,
     staged: StagedUpload,
+    *,
+    moved_paths: list[Path],
 ) -> Document:
-    """A changed file at a known path: swap the bytes, reset the index."""
-    destination = settings.storage_root / document.stored_path
+    """Create an immutable new file version and point the document at it."""
+    version_relative = (
+        Path("uploads")
+        / str(document.project_id)
+        / str(document.id)
+        / "versions"
+        / str(uuid.uuid4())
+        / staged.filename
+    )
+    destination = settings.storage_root / version_relative
     destination.parent.mkdir(parents=True, exist_ok=True)
     shutil.move(str(staged.temp_path), destination)
+    moved_paths.append(destination)
 
+    document.stored_path = version_relative.as_posix()
     document.content_hash = staged.content_hash
     document.size = staged.size
+    document.filename = staged.filename
     document.file_type = staged.format.file_type
     document.status = DocumentStatus.PENDING.value
     session.add(
         FileVersion(
             document_id=document.id,
             content_hash=staged.content_hash,
-            storage_path=document.stored_path,
+            storage_path=version_relative.as_posix(),
         )
     )
-    await session.commit()
-    await session.refresh(document)
+    await session.flush()
     return document
 
 
