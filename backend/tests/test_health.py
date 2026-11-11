@@ -6,6 +6,7 @@ fail here, and readiness must report that rather than raising.
 
 from __future__ import annotations
 
+import pytest
 from fastapi.testclient import TestClient
 
 from app.api.schemas.health import DependencyCheck
@@ -52,6 +53,7 @@ def test_readiness_reports_every_dependency() -> None:
         "redis",
         "chat_model",
         "embedding_model",
+        "worker",
     }
     assert body["status"] in {"ready", "degraded", "unavailable"}
     # 503 means a critical dependency is down.
@@ -89,6 +91,36 @@ def test_evaluate_status_unavailable_when_critical_down() -> None:
         _check("chat_model", "error", critical=False),
     ]
     assert evaluate_status(checks) == "unavailable"
+
+
+async def test_worker_probe_reports_online(monkeypatch: pytest.MonkeyPatch) -> None:
+    from app.services.system_service import check_worker
+    from app.workers.celery_app import celery_app
+
+    monkeypatch.setattr(
+        celery_app.control,
+        "ping",
+        lambda timeout=None: [{"celery@test": {"ok": "pong"}}],
+    )
+
+    check = await check_worker(timeout=0.1)
+
+    assert check.status == "ok"
+    assert check.critical is False
+    assert check.detail == "1 worker online"
+
+
+async def test_worker_probe_reports_an_empty_queue(monkeypatch: pytest.MonkeyPatch) -> None:
+    from app.services.system_service import check_worker
+    from app.workers.celery_app import celery_app
+
+    monkeypatch.setattr(celery_app.control, "ping", lambda timeout=None: [])
+
+    check = await check_worker(timeout=0.1)
+
+    assert check.status == "error"
+    assert check.critical is False
+    assert "stay queued" in (check.detail or "")
 
 
 def test_unknown_route_returns_404() -> None:

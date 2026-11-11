@@ -85,6 +85,7 @@ export function DependencyRow({ check }: { check: DependencyCheck }) {
     redis: "Redis queue",
     chat_model: "Chat model",
     embedding_model: "Embedding model",
+    worker: "Ingestion worker",
   };
   const ok = check.status === "ok";
 

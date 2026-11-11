@@ -108,13 +108,18 @@ docker compose up -d
 | Endpoint | Behaviour |
 |---|---|
 | `GET /health/live` | 200 while the process is serving |
-| `GET /health/ready` | Probes PostgreSQL, Redis and both model servers |
+| `GET /health/ready` | Probes PostgreSQL, Redis, both model servers and the ingestion worker |
 
 `/health/ready` returns:
 
 - `ready` (200) — everything answered.
-- `degraded` (200) — a model server is down; the API still works.
+- `degraded` (200) — a model server or the ingestion worker is down; the API still works.
 - `unavailable` (503) — PostgreSQL or Redis is down.
+
+The worker probe is a Celery control ping, so it answers from the broker rather
+than from a database guess. Without a worker every upload stays `queued`:
+readiness reports it, and the project overview and files page show an
+"Indexing worker is offline" banner instead of leaving jobs to sit silently.
 
 The body lists every probe with `name`, `status`, `critical` and `detail`, so a
 failure names the dependency instead of returning a bare 503.

@@ -15,6 +15,7 @@ import {
   Waypoints,
 } from "lucide-react";
 
+import { WorkerWarning } from "@/components/projects/worker-warning";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonClasses } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -383,6 +384,8 @@ export default function ProjectOverviewPage() {
               ) : (
                 <StatusBreakdown documents={documentItems} />
               )}
+
+              <WorkerWarning className="mt-4" />
 
               {failedJobs.length > 0 ? (
                 <div className="mt-4 rounded-xl border border-rose/25 bg-rose/5 p-3">

@@ -33,10 +33,10 @@ async def liveness(
 async def readiness(
     resources: AppResources = Depends(get_resources),
 ) -> JSONResponse:
-    """Probe PostgreSQL, Redis and both model servers.
+    """Probe PostgreSQL, Redis, both model servers and the ingestion worker.
 
     503 only when a critical dependency (PostgreSQL or Redis) is unavailable;
-    a missing model server returns 200 with status ``degraded``.
+    a missing model server or worker returns 200 with status ``degraded``.
     """
     report = await build_readiness(resources)
     status_code = 503 if report.status == "unavailable" else 200

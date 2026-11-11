@@ -13,6 +13,7 @@ from typing import Sequence
 from redis.asyncio import Redis
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
+from starlette.concurrency import run_in_threadpool
 
 from app import __version__
 from app.api.schemas.health import DependencyCheck, ReadinessResponse
@@ -93,6 +94,53 @@ async def check_model(
     return DependencyCheck(name=name, status="ok", critical=critical, detail=detail)
 
 
+async def check_worker(*, timeout: float) -> DependencyCheck:
+    """Ask the broker whether any Celery worker answers a control ping.
+
+    A worker is not critical for serving the API, but without one every upload
+    stays ``queued`` forever, so readiness reports it as a degraded dependency.
+    """
+    name = "worker"
+    critical = _is_critical(name)
+    # The control broadcast is a blocking Redis round trip; keep it off the
+    # event loop and short so readiness stays fast when nobody is listening.
+    ping_timeout = min(timeout, 1.0)
+
+    def ping() -> list[dict[str, object]]:
+        from app.workers.celery_app import celery_app
+
+        return celery_app.control.ping(timeout=ping_timeout)
+
+    try:
+        replies = await asyncio.wait_for(
+            run_in_threadpool(ping), timeout=ping_timeout + 2.0
+        )
+    except asyncio.TimeoutError:
+        replies = []
+    except Exception as exc:  # noqa: BLE001 - reported as a check, never raised
+        logger.debug("worker probe failed", exc_info=exc)
+        return DependencyCheck(
+            name=name, status="error", critical=critical, detail=_error_detail(exc)
+        )
+
+    if not replies:
+        return DependencyCheck(
+            name=name,
+            status="error",
+            critical=critical,
+            detail=(
+                "no Celery worker answered; uploads stay queued until one starts "
+                "(backend: python -m celery -A app.workers.celery_app worker)"
+            ),
+        )
+    return DependencyCheck(
+        name=name,
+        status="ok",
+        critical=critical,
+        detail=f"{len(replies)} worker{'s' if len(replies) != 1 else ''} online",
+    )
+
+
 def evaluate_status(checks: Sequence[DependencyCheck]) -> str:
     """Collapse individual probes into one overall readiness status."""
     if any(check.critical and check.status != "ok" for check in checks):
@@ -117,6 +165,7 @@ async def build_readiness(resources: AppResources) -> ReadinessResponse:
             name="embedding_model",
             timeout=settings.readiness_timeout,
         ),
+        check_worker(timeout=settings.readiness_timeout),
     )
 
     status = evaluate_status(checks)

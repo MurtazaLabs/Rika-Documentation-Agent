@@ -13,6 +13,7 @@ import {
   Waypoints,
 } from "lucide-react";
 
+import { WorkerWarning } from "@/components/projects/worker-warning";
 import { SourceViewer } from "@/components/source-viewer";
 import { FileExplorer } from "@/components/workspace/file-explorer";
 import { Badge } from "@/components/ui/badge";
@@ -548,6 +549,7 @@ function FilesContent() {
           </div>
 
           <div className="space-y-5">
+            <WorkerWarning />
             <IndexingPanel
               projectId={projectId}
               jobs={jobItems}
