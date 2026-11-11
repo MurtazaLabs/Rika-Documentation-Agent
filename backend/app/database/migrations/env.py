@@ -31,6 +31,26 @@ config.set_main_option(
 
 target_metadata = Base.metadata
 
+# PostgreSQL-only columns that exist in migrations but cannot be mapped.
+#
+# ``document_chunks.search_vector`` is a stored generated tsvector column;
+# SQLite cannot evaluate ``to_tsvector`` when it creates the test schema, and a
+# Column has no dialect-conditional DDL (an Index does, see the model). Without
+# this filter autogenerate reports the reflected column as removed and would
+# emit ``DROP COLUMN search_vector``, silently killing keyword search.
+UNMODELLED_COLUMNS = {("document_chunks", "search_vector")}
+
+
+def include_object(
+    object_, name: str | None, type_: str, reflected: bool, compare_to
+) -> bool:
+    """Hide the PostgreSQL-only generated column from autogenerate."""
+    if type_ == "column" and reflected and compare_to is None:
+        table = getattr(object_, "table", None)
+        if table is not None and (table.name, object_.name) in UNMODELLED_COLUMNS:
+            return False
+    return True
+
 
 def run_migrations_offline() -> None:
     """Emit SQL without connecting (``alembic upgrade head --sql``)."""
@@ -40,6 +60,7 @@ def run_migrations_offline() -> None:
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
         compare_type=True,
+        include_object=include_object,
     )
     with context.begin_transaction():
         context.run_migrations()
@@ -50,6 +71,7 @@ def do_run_migrations(connection: Connection) -> None:
         connection=connection,
         target_metadata=target_metadata,
         compare_type=True,
+        include_object=include_object,
     )
     with context.begin_transaction():
         context.run_migrations()

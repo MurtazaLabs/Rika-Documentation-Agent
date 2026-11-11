@@ -29,8 +29,9 @@ coverage/
 *.tsbuildinfo
 
 # --- Runtime data (never commit uploaded project material) ---
-storage/
-models/
+# Root-anchored: an unanchored ``models/`` also matched backend/app/database/models/.
+/storage/
+/models/
 
 # --- Local toolchain: portable PostgreSQL + pgvector and its data directory ---
 .tools/

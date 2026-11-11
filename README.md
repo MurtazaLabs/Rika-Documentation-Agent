@@ -383,6 +383,13 @@ index. PostgreSQL keeps it in sync on every chunk insert, so ingestion needs no
 second write and re-indexing cannot leave a stale keyword index. Keyword
 retrieval queries it with `websearch_to_tsquery('simple', ...)`.
 
+Both retrieval indexes — this GIN index and the HNSW index from `0002` — are
+declared on the `DocumentChunk` model with PostgreSQL-only DDL, while the
+generated `search_vector` column is excluded from autogenerate in
+`migrations/env.py`. SQLite cannot build either construct, and without this a
+future `alembic revision --autogenerate` would emit `DROP INDEX` and
+`DROP COLUMN search_vector`, killing retrieval. `alembic check` reports no drift.
+
 Migration `0004` adds `messages.position` with a unique
 `(conversation_id, position)` constraint. `created_at` is the transaction
 timestamp on PostgreSQL, so a question and its answer would otherwise tie;
