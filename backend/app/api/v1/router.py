@@ -15,6 +15,7 @@ from app.api.routes import (
     jobs,
     projects,
     search,
+    settings,
     uploads,
 )
 
@@ -26,3 +27,4 @@ api_router.include_router(jobs.router)
 api_router.include_router(search.router)
 api_router.include_router(chat.router)
 api_router.include_router(conversations.router)
+api_router.include_router(settings.router)

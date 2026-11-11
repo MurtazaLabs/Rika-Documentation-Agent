@@ -7,7 +7,7 @@ import uuid
 from fastapi import APIRouter, Depends, Query, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.schemas.document import DocumentList, DocumentRead
+from app.api.schemas.document import DocumentList, DocumentPreview, DocumentRead
 from app.api.schemas.job import JobRead
 from app.config import Settings, get_settings
 from app.database.session import get_session
@@ -43,6 +43,30 @@ async def get_document(
     session: AsyncSession = Depends(get_session),
 ) -> DocumentRead:
     return await document_service.get_document(session, document_id)
+
+
+@router.get(
+    "/documents/{document_id}/preview",
+    response_model=DocumentPreview,
+    summary="Read a document's text for the source viewer",
+    description=(
+        "Text and code are returned from the stored upload so line numbers "
+        "match the citation. PDF and office files are reconstructed from "
+        "indexed chunks. Paths outside the storage root are never read."
+    ),
+)
+async def preview_document(
+    document_id: uuid.UUID,
+    project_id: uuid.UUID | None = Query(
+        default=None,
+        description="Reject the request if the document is not in this project.",
+    ),
+    session: AsyncSession = Depends(get_session),
+    settings: Settings = Depends(get_settings),
+) -> DocumentPreview:
+    return await document_service.preview_document(
+        session, settings, document_id, project_id=project_id
+    )
 
 
 @router.delete(

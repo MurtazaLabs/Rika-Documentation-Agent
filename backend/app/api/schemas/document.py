@@ -46,3 +46,24 @@ class UploadResult(BaseModel):
     jobs: list[JobRead] = Field(default_factory=list)
     # Archive entries that were ignored because their extension is unsupported.
     skipped: list[str] = Field(default_factory=list)
+
+
+class DocumentPreview(BaseModel):
+    """Read-only text used by the source viewer.
+
+    Text and code files are read from their stored copy, so line numbers match
+    the original upload. Parsed binaries (PDF, Office) have no viewable source,
+    so the preview is reconstructed from the stored chunks instead.
+    """
+
+    document_id: uuid.UUID
+    project_id: uuid.UUID
+    file_path: str
+    filename: str
+    file_type: str
+    language: str | None = None
+    source: str = Field(description="'file', 'chunks' or 'none'.")
+    content: str
+    line_count: int | None = None
+    truncated: bool = False
+    message: str | None = None
