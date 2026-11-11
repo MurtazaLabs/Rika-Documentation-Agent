@@ -1,7 +1,7 @@
 """Versioned API router (``/api/v1``).
 
-Projects, documents, uploads, ingestion jobs, retrieval, chat and
-conversations live here.
+Projects, documents, uploads, ingestion jobs, retrieval, chat,
+conversations, project intelligence and settings live here.
 """
 
 from __future__ import annotations
@@ -12,6 +12,7 @@ from app.api.routes import (
     chat,
     conversations,
     documents,
+    intelligence,
     jobs,
     projects,
     search,
@@ -27,4 +28,5 @@ api_router.include_router(jobs.router)
 api_router.include_router(search.router)
 api_router.include_router(chat.router)
 api_router.include_router(conversations.router)
+api_router.include_router(intelligence.router)
 api_router.include_router(settings.router)

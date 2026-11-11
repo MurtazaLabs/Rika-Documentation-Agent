@@ -75,9 +75,17 @@ _add(_code("vue"), ".vue")
 _add(_code("svelte"), ".svelte")
 
 
+# Templates are indexable; a real ``.env`` is not, so a secret can never be
+# stored in the project index by accident.
+ENV_TEMPLATES = {".env.example", ".env.sample", ".env.template"}
+
+
 def format_for(filename: str) -> FileFormat | None:
     """Return the format for a filename, or ``None`` when unsupported."""
-    return BY_EXTENSION.get(PurePosixPath(filename).suffix.lower())
+    path = PurePosixPath(filename)
+    if path.name.lower() in ENV_TEMPLATES:
+        return _plain("config")
+    return BY_EXTENSION.get(path.suffix.lower())
 
 
 def supported_extensions() -> list[str]:

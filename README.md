@@ -6,16 +6,20 @@ paths and line ranges — running entirely on your machine.
 
 The full specification lives in [`docs/rika-project-plan.md`](docs/rika-project-plan.md).
 
-> **Status: Phases 1–9 complete.** Projects, uploads, document parsing, code
-> intelligence, chunking, embedding, ingestion jobs, hybrid retrieval and
-> grounded chat work end to end: every chunk is stored in PostgreSQL with a
-> 1024-dimension vector and indexed with HNSW, source files also produce symbols
-> and import edges, `POST /projects/{id}/search` fuses pgvector and full-text
-> results with citations, and Rika answers questions from that evidence with
-> validated citations, persisted conversations and optional streaming. A
-> Next.js UI covers the same loop in a browser: projects, a file explorer with
-> source preview, search, streaming chat with citations that open the cited
-> lines, conversation history and a read-only settings page.
+> **Status: Phases 1–9 complete; the Phase 10 intelligence API is in place.**
+> Projects, uploads, document parsing, code intelligence, chunking, embedding,
+> ingestion jobs, hybrid retrieval and grounded chat work end to end: every
+> chunk is stored in PostgreSQL with a 1024-dimension vector and indexed with
+> HNSW, source files also produce symbols and import edges,
+> `POST /projects/{id}/search` fuses pgvector and full-text results with
+> citations, and Rika answers questions from that evidence with validated
+> citations, persisted conversations and optional streaming. A Next.js UI
+> covers the same loop in a browser: projects, a file explorer with source
+> preview, search, streaming chat with citations that open the cited lines,
+> conversation history and a read-only settings page. On top of the index,
+> `/projects/{id}/intelligence/*` reports the project's languages and stack,
+> layers and import edges, tables, endpoints, symbol explanations, README
+> drift and possible defects — each finding labelled confirmed or possible.
 
 ## Requirements
 
@@ -143,6 +147,14 @@ All application endpoints live under `/api/v1`.
 | `GET` | `/projects/{id}/jobs` | List a project's jobs |
 | `POST` | `/jobs/{id}/retry` | Re-queue a failed or cancelled job |
 | `GET` | `/settings` | Read-only runtime configuration for the settings page |
+| `GET` | `/projects/{id}/intelligence/overview` | Languages, directories, stack, entry points, config files, hot modules |
+| `GET` | `/projects/{id}/intelligence/architecture` | Layers and import edges, ORM tables, handlers, responsibilities |
+| `GET` | `/projects/{id}/intelligence/routes` | Discovered HTTP endpoints (`method` filter) |
+| `GET` | `/projects/{id}/intelligence/symbols` | Search symbols (`q`, `symbol_type`, `path`, `limit`) |
+| `GET` | `/projects/{id}/intelligence/symbols/{symbol_id}` | Definition, imports, importers, references |
+| `GET` | `/projects/{id}/intelligence/imports` | Import analysis for one `path` |
+| `GET` | `/projects/{id}/intelligence/docs` | README/routes, tables, settings and link comparison |
+| `GET` | `/projects/{id}/intelligence/findings` | Bug investigation, confirmed versus possible |
 
 Errors use one shape: `{"error": {"code", "message", "details"}}`. Validation
 failures return 422, unknown ids 404, oversized uploads 413, a job that cannot
@@ -351,6 +363,36 @@ project id. `GET /api/v1/conversations/{id}` returns the messages with their
 stored citations, and `DELETE` removes the conversation and its messages.
 Both detail and delete accept an optional `project_id` guard and return 404 if
 the conversation belongs elsewhere.
+
+## Project intelligence
+
+The intelligence endpoints read only what ingestion stored — documents, chunks,
+symbols and import edges — so they need no model call and no second parse of
+the source. That is also why they can be precise about confidence:
+
+- **Overview** — languages with file and symbol counts, the busiest
+directories, frameworks found through imports or manifests (FastAPI,
+SQLAlchemy, Celery, Next.js, …), entry points, configuration files, the modules
+most other modules import, and the split between internal edges, external
+packages and imports that point outside the indexed files.
+- **Architecture** — each file assigned to a layer (API routes, services,
+database, retrieval, UI pages, …), import edges between layers, ORM tables with
+their columns and foreign-key targets, HTTP handlers with the modules they pull
+in, and a short responsibility note per layer taken from module docstrings.
+- **Code** — symbol search, and for one symbol: its indexed definition text,
+signature, docstring, its file's imports, which files import that file, sibling
+symbols and textual references. References are lexical matches, not a resolved
+call graph, and the response says so.
+- **Documentation comparison** — README route tables against discovered
+routes, documented tables against `__tablename__` declarations, `.env.example`
+against settings fields, and markdown links against indexed files. A route the
+docs mention but the index has no handler for is reported as *possible*, because
+the handler may live in a file that was never uploaded.
+- **Bug investigation** — imports that name a project package but resolve to
+nothing (confirmed), relative imports the index cannot resolve (possible),
+classes used without an import, duplicate function bodies, `except:` without a
+type (confirmed), swallowed exceptions, TODO/FIXME markers, and configuration
+drift between defaults and `.env.example`.
 
 ## Database
 
@@ -638,7 +680,8 @@ cd backend
 | 7 — Retrieval | Done: pgvector + full-text search, metadata filters, RRF fusion, citations, evaluation baseline |
 | 8 — RAG and answer generation | Done: Rika prompt, grounded answers, validated citations, conversations, SSE streaming |
 | 9 — Frontend | Done: dashboard, project workspaces, file explorer with source preview, search, streaming chat with citation jump-to-line, conversations, settings |
-| 10–12 — Intelligence, hardening, packaging | Planned |
+| 10 — Project intelligence | Backend done: overview, architecture, code analysis, documentation comparison, bug investigation with confirmed/possible confidence; UI and chat grounding pending |
+| 11–12 — Hardening, packaging | Planned |
 
 ## Troubleshooting
 

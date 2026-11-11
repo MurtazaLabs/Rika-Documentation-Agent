@@ -1391,7 +1391,10 @@ class _SymbolExtractor:
         if prop not in _HTTP_METHODS and prop not in {"route", "api_route"}:
             return []
         path = _first_string(args or "")
-        if not path:
+        # ``@router.get("")`` is the common FastAPI form for a router's own
+        # mount point: an empty path is a real route, but a decorator with no
+        # string argument at all is not a route declaration.
+        if not path and not re.search(r"[\"'`]", args or ""):
             return []
         methods: list[str] = []
         if prop in {"route", "api_route"}:
@@ -1403,7 +1406,7 @@ class _SymbolExtractor:
         methods = methods or ["GET"]
         added: list[str] = []
         for method in methods:
-            label = f"{method} {path}"
+            label = f"{method} {path}".strip()
             if self._add_route(
                 label,
                 decorator,
