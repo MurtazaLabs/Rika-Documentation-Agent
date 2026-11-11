@@ -139,7 +139,7 @@ def test_context_budget_assigns_markers_only_to_included_sources() -> None:
 
 def test_prompt_keeps_rules_in_system_message_and_context_last() -> None:
     hit = make_hit("The archive path is checked in ingest.py.")
-    messages, sources = build_chat_messages(
+    messages, sources, intelligence = build_chat_messages(
         "Where is it checked?",
         [HistoryTurn("assistant", "Earlier answer [S9].")],
         [hit],
@@ -186,7 +186,7 @@ def test_prompt_respects_the_whole_prompt_budget() -> None:
     chunks = [make_hit("archive " * 400) for _ in range(4)]
     history = [HistoryTurn("user", "previous " * 500)]
 
-    messages, sources = build_chat_messages(
+    messages, sources, _intelligence = build_chat_messages(
         "question " * 1000,
         history,
         chunks,

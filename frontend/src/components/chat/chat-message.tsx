@@ -10,10 +10,15 @@ import {
 } from "lucide-react";
 
 import { CitationList } from "@/components/chat/citation-list";
+import { IntelligenceCitations } from "@/components/chat/intelligence-citations";
 import { MarkdownAnswer } from "@/components/chat/markdown-answer";
 import { RikaMark } from "@/components/ui/brand";
 import { useToast } from "@/components/ui/toast";
-import type { Citation, MessageRole } from "@/lib/types";
+import type {
+  ChatIntelligenceItem,
+  Citation,
+  MessageRole,
+} from "@/lib/types";
 import { cn, copyText, formatTime } from "@/lib/utils";
 
 export interface ChatThreadMessage {
@@ -21,6 +26,7 @@ export interface ChatThreadMessage {
   role: MessageRole;
   content: string;
   citations: Citation[];
+  intelligence?: ChatIntelligenceItem[];
   createdAt: string;
   streaming?: boolean;
   error?: string;
@@ -45,9 +51,11 @@ function TypingDots() {
 
 export function ChatMessageView({
   message,
+  projectId,
   onOpenCitation,
 }: {
   message: ChatThreadMessage;
+  projectId: string;
   onOpenCitation: (citation: Citation) => void;
 }) {
   const { toast } = useToast();
@@ -148,6 +156,11 @@ export function ChatMessageView({
           ) : null}
 
           <CitationList citations={message.citations} onOpen={onOpenCitation} />
+
+          <IntelligenceCitations
+            items={message.intelligence ?? []}
+            projectId={projectId}
+          />
 
           {!message.streaming && message.content ? (
             <div className="mt-2.5 flex items-center gap-1">

@@ -3,6 +3,12 @@
 from __future__ import annotations
 
 from app.rag.citations import Citation, CitationValidation, validate_citations
+from app.rag.intelligence import (
+    IntelligenceItem,
+    IntelligenceValidation,
+    build_intelligence,
+    validate_intelligence,
+)
 from app.rag.prompts import (
     RIKA_SYSTEM_PROMPT,
     build_chat_messages,
@@ -15,10 +21,14 @@ __all__ = [
     "Citation",
     "CitationValidation",
     "HistoryTurn",
+    "IntelligenceItem",
+    "IntelligenceValidation",
     "PromptSource",
     "RIKA_SYSTEM_PROMPT",
     "build_chat_messages",
     "build_context",
+    "build_intelligence",
     "build_retrieval_query",
     "validate_citations",
+    "validate_intelligence",
 ]

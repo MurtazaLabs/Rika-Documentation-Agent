@@ -250,6 +250,7 @@ function ChatContent() {
             patch({
               content: response.answer,
               citations: response.citations,
+              intelligence: response.intelligence,
               warnings: response.warnings,
               grounded: response.grounded,
               retrievedChunks: response.retrieved_chunks,
@@ -468,6 +469,7 @@ function ChatContent() {
                   <ChatMessageView
                     key={message.id}
                     message={message}
+                    projectId={projectId}
                     onOpenCitation={setViewing}
                   />
                 ))}

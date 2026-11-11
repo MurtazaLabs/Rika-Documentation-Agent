@@ -19,8 +19,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import Settings
 from app.core.exceptions import AppError
 from app.database.models import Conversation, Message, MessageRole
+from app.intelligence.facts import load_facts
 from app.llm.llama_client import ChatMessage, ModelServerClient
 from app.rag.citations import CitationValidation, validate_citations
+from app.rag.intelligence import (
+    IntelligenceItem,
+    IntelligenceValidation,
+    build_intelligence,
+    validate_intelligence,
+)
 from app.rag.prompts import build_chat_messages, build_retrieval_query
 from app.rag.types import HistoryTurn, PromptSource
 from app.retrieval.types import SearchFilters
@@ -47,6 +54,7 @@ class PreparedChat:
     history: list[HistoryTurn]
     messages: list[ChatMessage]
     sources: list[PromptSource]
+    intelligence: list[IntelligenceItem]
 
 
 @dataclass(slots=True)
@@ -58,12 +66,13 @@ class ChatAnswer:
     user_message: Message
     assistant_message: Message
     citations: list[dict[str, Any]]
+    intelligence: list[dict[str, Any]]
     warnings: list[str]
     retrieved_chunks: int
 
     @property
     def grounded(self) -> bool:
-        return bool(self.citations)
+        return bool(self.citations or self.intelligence)
 
 
 @dataclass(frozen=True, slots=True)
@@ -129,10 +138,13 @@ async def prepare_chat(
             embedding_client=embedding_client,
             settings=settings,
         )
-        prompt, sources = build_chat_messages(
+        prompt, sources, intelligence = build_chat_messages(
             message,
             history,
             chunks,
+            intelligence=build_intelligence(
+                await load_facts(session, project_id)
+            ),
             max_context_chars=settings.chat_context_max_chars,
             max_history_messages=settings.chat_history_messages,
             max_history_chars=settings.chat_history_max_chars,
@@ -152,6 +164,7 @@ async def prepare_chat(
         history=history,
         messages=prompt,
         sources=sources,
+        intelligence=intelligence,
     )
 
 
@@ -163,9 +176,10 @@ async def answer_chat(
     settings: Settings,
 ) -> ChatAnswer:
     """Generate a non-streaming answer and persist the turn."""
-    if not prepared.sources:
+    if not prepared.sources and not prepared.intelligence:
         answer = INSUFFICIENT_EVIDENCE_ANSWER
         citations: list[dict[str, Any]] = []
+        derived: list[dict[str, Any]] = []
         warnings = ["insufficient_evidence"]
     else:
         try:
@@ -182,7 +196,10 @@ async def answer_chat(
             raise
 
         validation = validate_citations(raw, prepared.sources)
-        answer, citations, warnings = _finalise_answer(validation)
+        answer, citations, derived, warnings = _finalise_answer(
+            validation,
+            validate_intelligence(validation.text, prepared.intelligence),
+        )
 
     user_message, assistant_message = await _persist_turn(
         session, prepared, answer, citations
@@ -193,6 +210,7 @@ async def answer_chat(
         user_message=user_message,
         assistant_message=assistant_message,
         citations=citations,
+        intelligence=derived,
         warnings=warnings,
         retrieved_chunks=len(prepared.sources),
     )
@@ -222,9 +240,10 @@ async def stream_answer(
 
     completed = False
     try:
-        if not prepared.sources:
+        if not prepared.sources and not prepared.intelligence:
             answer = INSUFFICIENT_EVIDENCE_ANSWER
             citations: list[dict[str, Any]] = []
+            derived: list[dict[str, Any]] = []
             warnings = ["insufficient_evidence"]
             yield StreamEvent("token", {"delta": answer})
         else:
@@ -239,7 +258,10 @@ async def stream_answer(
 
             raw = "".join(parts)
             validation = validate_citations(raw, prepared.sources)
-            answer, citations, warnings = _finalise_answer(validation)
+            answer, citations, derived, warnings = _finalise_answer(
+                validation,
+                validate_intelligence(validation.text, prepared.intelligence),
+            )
             if not raw.strip():
                 yield StreamEvent("token", {"delta": answer})
 
@@ -256,6 +278,7 @@ async def stream_answer(
                 assistant_message,
                 answer,
                 citations,
+                derived,
                 warnings,
             ),
         )
@@ -309,22 +332,26 @@ async def _persist_turn(
 
 def _finalise_answer(
     validation: CitationValidation,
-) -> tuple[str, list[dict[str, Any]], list[str]]:
+    derived: IntelligenceValidation,
+) -> tuple[str, list[dict[str, Any]], list[dict[str, Any]], list[str]]:
     warnings: list[str] = []
-    if not validation.text.strip():
-        # The model produced nothing or only invented source markers. Saying
-        # so is more honest than presenting an empty answer as grounded.
+    if not derived.text.strip():
+        # The model produced nothing, or only invented markers. Saying so is
+        # more honest than presenting an empty answer as grounded.
         return (
             INSUFFICIENT_EVIDENCE_ANSWER,
+            [],
             [],
             ["insufficient_evidence", "empty_model_answer"],
         )
 
     if validation.invalid_markers:
         warnings.append("invalid_citations_removed")
-    if not validation.has_citations:
+    if derived.invalid_markers:
+        warnings.append("invalid_intelligence_markers_removed")
+    if not validation.citations and not derived.items:
         warnings.append("no_valid_citations")
-    return validation.text, validation.citations, warnings
+    return derived.text, validation.citations, derived.items, warnings
 
 
 def _turn_payload(
@@ -333,6 +360,7 @@ def _turn_payload(
     assistant_message: Message,
     answer: str,
     citations: list[dict[str, Any]],
+    intelligence: list[dict[str, Any]],
     warnings: list[str],
 ) -> dict[str, Any]:
     return {
@@ -342,9 +370,10 @@ def _turn_payload(
         "message_id": str(assistant_message.id),
         "answer": answer,
         "citations": citations,
+        "intelligence": intelligence,
         "warnings": warnings,
         "retrieved_chunks": len(prepared.sources),
-        "grounded": bool(citations),
+        "grounded": bool(citations or intelligence),
     }
 
 

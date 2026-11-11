@@ -177,6 +177,16 @@ export interface ChatRequest {
   filters?: SearchFilters;
 }
 
+export interface ChatIntelligenceItem {
+  marker: string;
+  kind: string;
+  message: string;
+  confidence: string | null;
+  severity: string | null;
+  file_path: string | null;
+  line: number | null;
+}
+
 export interface ChatResponse {
   project_id: UUID;
   conversation_id: UUID;
@@ -184,6 +194,7 @@ export interface ChatResponse {
   message_id: UUID;
   answer: string;
   citations: Citation[];
+  intelligence: ChatIntelligenceItem[];
   warnings: string[];
   retrieved_chunks: number;
   grounded: boolean;

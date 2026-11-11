@@ -57,6 +57,22 @@ class ChatCitation(BaseModel):
     retrieval_score: float
 
 
+class ChatIntelligenceItem(BaseModel):
+    """A derived report item the answer relied on.
+
+    These come from the stored index rather than a retrieved passage, so they
+    carry a confidence label instead of a chunk id.
+    """
+
+    marker: str
+    kind: str
+    message: str
+    confidence: str | None = None
+    severity: str | None = None
+    file_path: str | None = None
+    line: int | None = None
+
+
 class ChatResponse(BaseModel):
     project_id: uuid.UUID
     conversation_id: uuid.UUID
@@ -64,6 +80,7 @@ class ChatResponse(BaseModel):
     message_id: uuid.UUID
     answer: str
     citations: list[ChatCitation] = Field(default_factory=list)
+    intelligence: list[ChatIntelligenceItem] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
     retrieved_chunks: int
     grounded: bool

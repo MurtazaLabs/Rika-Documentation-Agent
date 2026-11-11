@@ -113,6 +113,7 @@ def _response(answer: chat_service.ChatAnswer) -> ChatResponse:
         message_id=answer.assistant_message.id,
         answer=answer.assistant_message.content,
         citations=answer.citations,
+        intelligence=answer.intelligence,
         warnings=answer.warnings,
         retrieved_chunks=answer.retrieved_chunks,
         grounded=answer.grounded,

@@ -318,8 +318,23 @@ included in the prompt. Valid markers become citations carrying `chunk_id`,
 `page_number`, `language`, `content_type`, a snippet and retrieval scores.
 Unknown markers such as `[S99]` are removed from the answer; `warnings` reports
 `invalid_citations_removed` and `no_valid_citations` when no grounded citation
-remains. If retrieval finds nothing, Rika returns a fixed "not enough evidence"
-answer without calling the model.
+remains.
+
+Architecture and defect questions are answered from the project-intelligence
+reports as well. The prompt gains a `<project_intelligence>` block with the
+layer structure, layer dependencies, important modules, ORM tables, the findings
+from §13.5 and the documentation comparison, each item numbered `[I1]`, `[I2]`, …
+and finding items carrying their `confirmed`/`possible` confidence. Markers are
+validated the same way as citations: an `[I#]` the model was never shown is
+dropped (`invalid_intelligence_markers_removed`). The response's `intelligence`
+list names the items the answer actually relied on, so an answer can be grounded
+by a derived finding even when retrieval returned no chunk. The markers
+themselves are removed from the answer text, because a derived item has no chunk
+to highlight and is not persisted with the message: the list accompanies the
+live answer.
+
+If retrieval finds nothing and the project has no derived facts yet, Rika
+returns a fixed "not enough evidence" answer without calling the model.
 
 Conversation history is read and written only inside the conversation's
 project. A conversation id from another project is a 404. The first question
