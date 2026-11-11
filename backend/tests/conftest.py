@@ -30,7 +30,7 @@ from app.config import Settings, get_settings
 from app.core.constants import EMBEDDING_VECTOR_DIMENSION
 from app.database.base import Base
 from app.database.session import get_session
-from app.dependencies import get_embedding_client
+from app.dependencies import get_chat_client, get_embedding_client
 from app.main import app
 
 EXTERNAL_DATABASE_URL = os.environ.get("RIKA_TEST_DATABASE_URL")
@@ -61,6 +61,53 @@ class FakeEmbeddingClient:
 @pytest.fixture
 def embeddings() -> FakeEmbeddingClient:
     return FakeEmbeddingClient()
+
+
+class FakeChatClient:
+    """Stands in for the chat server: scripted replies, no HTTP.
+
+    ``calls`` keeps the exact messages the service built so tests can inspect
+    the system prompt, retrieved context and conversation history.
+    """
+
+    model_name = "fake-chat-model"
+
+    def __init__(self) -> None:
+        self.calls: list[dict[str, object]] = []
+        self.response = "The archive path is validated during ingestion [S1]."
+        self.stream_chunks = [
+            "The archive path is ",
+            "validated during ingestion [S1].",
+        ]
+        self.failure: Exception | None = None
+        self.stream_failure: Exception | None = None
+
+    async def chat(self, messages, *, temperature=0.2, max_tokens=512):
+        self._record(messages, temperature, max_tokens)
+        if self.failure is not None:
+            raise self.failure
+        return self.response
+
+    async def chat_stream(self, messages, *, temperature=0.2, max_tokens=512):
+        self._record(messages, temperature, max_tokens)
+        if self.stream_failure is not None:
+            raise self.stream_failure
+        for chunk in self.stream_chunks:
+            yield chunk
+
+    def _record(self, messages, temperature, max_tokens) -> None:
+        self.calls.append(
+            {
+                "messages": [dict(message) for message in messages],
+                "temperature": temperature,
+                "max_tokens": max_tokens,
+            }
+        )
+
+
+@pytest.fixture
+def chat() -> FakeChatClient:
+    return FakeChatClient()
 
 
 @pytest.fixture
@@ -125,6 +172,7 @@ async def client(
     session_factory: async_sessionmaker[AsyncSession],
     app_settings: Settings,
     embeddings: FakeEmbeddingClient,
+    chat: FakeChatClient,
 ) -> AsyncClient:
     async def _session_override():
         async with session_factory() as session:
@@ -137,6 +185,7 @@ async def client(
     app.dependency_overrides[get_session] = _session_override
     app.dependency_overrides[get_settings] = lambda: app_settings
     app.dependency_overrides[get_embedding_client] = lambda: embeddings
+    app.dependency_overrides[get_chat_client] = lambda: chat
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as http:
         yield http

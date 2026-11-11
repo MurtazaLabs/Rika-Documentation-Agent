@@ -2,13 +2,15 @@
 
 Targets llama.cpp's ``llama-server``, which exposes an OpenAI-compatible API.
 Any server implementing ``/v1/models``, ``/v1/embeddings`` and
-``/v1/chat/completions`` works (for example Ollama).
+``/v1/chat/completions`` works (for example Ollama). Chat completions are
+available both as a single response and as a stream of content deltas.
 """
 
 from __future__ import annotations
 
+import json
 import logging
-from typing import Any, Sequence
+from typing import Any, AsyncIterator, Sequence
 
 import httpx
 
@@ -106,7 +108,7 @@ class ModelServerClient:
         temperature: float = 0.2,
         max_tokens: int = 512,
     ) -> str:
-        """Non-streaming completion. Streaming arrives with the RAG layer."""
+        """Non-streaming completion."""
         payload = await self._request(
             "POST",
             "/v1/chat/completions",
@@ -126,3 +128,80 @@ class ModelServerClient:
         if not isinstance(content, str):
             raise ModelServerError(f"{self.base_url} returned an empty completion")
         return content
+
+    async def chat_stream(
+        self,
+        messages: Sequence[ChatMessage],
+        *,
+        temperature: float = 0.2,
+        max_tokens: int = 512,
+    ) -> AsyncIterator[str]:
+        """Yield content deltas from an OpenAI-compatible SSE completion.
+
+        llama.cpp sends one ``data: {json}`` event per token batch and ends
+        with ``data: [DONE]``. Errors raised before the first delta propagate
+        normally; the chat service turns later ones into a stream error event.
+        """
+        request = {
+            "model": self.model_name,
+            "messages": list(messages),
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+            "stream": True,
+        }
+
+        try:
+            async with self._http().stream(
+                "POST", "/v1/chat/completions", json=request
+            ) as response:
+                if response.status_code >= 400:
+                    body = (await response.aread()).decode(
+                        "utf-8", errors="replace"
+                    ).strip()[:300]
+                    raise ModelServerError(
+                        f"{self.base_url}/v1/chat/completions returned "
+                        f"{response.status_code}: {body}"
+                    )
+
+                async for line in response.aiter_lines():
+                    line = line.strip()
+                    if not line or line.startswith(":"):
+                        continue
+                    if not line.startswith("data:"):
+                        continue
+                    data = line[len("data:") :].strip()
+                    if data == "[DONE]":
+                        return
+                    try:
+                        event = json.loads(data)
+                    except ValueError as exc:
+                        raise ModelServerError(
+                            f"{self.base_url} sent malformed stream data"
+                        ) from exc
+
+                    if isinstance(event, dict) and event.get("error"):
+                        error = event["error"]
+                        detail = (
+                            error.get("message")
+                            if isinstance(error, dict)
+                            else str(error)
+                        )
+                        raise ModelServerError(
+                            f"{self.base_url} streamed an error: "
+                            f"{str(detail)[:300]}"
+                        )
+
+                    choices = (
+                        event.get("choices") if isinstance(event, dict) else None
+                    )
+                    if not isinstance(choices, list) or not choices:
+                        continue
+                    delta = choices[0].get("delta") or {}
+                    content = delta.get("content")
+                    if isinstance(content, str) and content:
+                        yield content
+        except httpx.HTTPError as exc:
+            raise ModelServerError(
+                f"{self.base_url}/v1/chat/completions is unreachable: "
+                f"{exc.__class__.__name__}"
+            ) from exc

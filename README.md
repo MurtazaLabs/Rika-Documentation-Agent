@@ -6,12 +6,14 @@ paths and line ranges — running entirely on your machine.
 
 The full specification lives in [`docs/rika-project-plan.md`](docs/rika-project-plan.md).
 
-> **Status: Phases 4–7 complete.** Projects, uploads, document parsing, code
-> intelligence, chunking, embedding, ingestion jobs and hybrid retrieval work
-> end to end: every chunk is stored in PostgreSQL with a 1024-dimension vector
-> and indexed with HNSW, source files also produce symbols and import edges,
-> and `POST /projects/{id}/search` fuses pgvector and full-text results with
-> citations. Answer generation and the UI land in later phases.
+> **Status: Phases 4–8 complete.** Projects, uploads, document parsing, code
+> intelligence, chunking, embedding, ingestion jobs, hybrid retrieval and
+> grounded chat work end to end: every chunk is stored in PostgreSQL with a
+> 1024-dimension vector and indexed with HNSW, source files also produce symbols
+> and import edges, `POST /projects/{id}/search` fuses pgvector and full-text
+> results with citations, and Rika answers questions from that evidence with
+> validated citations, persisted conversations and optional streaming. The UI
+> lands in the next phase.
 
 ## Requirements
 
@@ -129,6 +131,10 @@ All application endpoints live under `/api/v1`.
 | `POST` | `/projects/{id}/upload-folder` | Files plus their relative `paths` |
 | `POST` | `/projects/{id}/upload-zip` | One ZIP archive |
 | `POST` | `/projects/{id}/search` | Hybrid retrieval with metadata filters |
+| `POST` | `/projects/{id}/chat` | Ask Rika; JSON or SSE streaming |
+| `GET` | `/conversations` | List conversations, newest first |
+| `GET` | `/conversations/{id}` | Read a conversation and its messages |
+| `DELETE` | `/conversations/{id}` | Delete a conversation and its messages |
 | `GET` | `/jobs/{id}` | Job status and progress |
 | `GET` | `/projects/{id}/jobs` | List a project's jobs |
 | `POST` | `/jobs/{id}/retry` | Re-queue a failed or cancelled job |
@@ -239,9 +245,11 @@ its citation — `file_path`, `symbol_name`, `start_line`/`end_line`,
 `page_number`, `language`, `content_type` — plus `rank`, `score`,
 `vector_score`, `keyword_score` and `matched_by`.
 
-The query is embedded with the configured embedding model. A query vector
-whose width does not match the stored `vector(1024)` column is refused with a
-`model_server_error`; it is never compared against incompatible vectors.
+The query is embedded with the configured embedding model. Only chunks whose
+`embedding_model` matches that model are eligible, so changing models requires
+a reindex. A query vector whose width does not match the stored `vector(1024)`
+column is refused with a `model_server_error`; it is never compared against
+incompatible vectors.
 
 PostgreSQL is the production retrieval path. The SQLite test fallback computes
 cosine similarity and term scores in Python so ranking, filters and
@@ -254,8 +262,9 @@ The curated cases live in
 They ask realistic questions about this repository and name the expected
 evidence (file path plus symbol/page/line when relevant).
 
-Index the repository as one project (a ZIP without `.venv`, `.tools` and
-`models` is enough), then run:
+Index the repository as one project. Archive the contents from the repository
+root, so paths begin with `backend/`, `docs/`, and so on, and leave out
+`.venv`, `.tools` and `models`. Then run:
 
 ```powershell
 cd backend
@@ -266,6 +275,77 @@ The report contains per-case and aggregate Recall@5, Recall@10, precision,
 citation correctness and duplicate result frequency. Add `--mode vector` or
 `--mode keyword` to record single-signal baselines before considering a
 reranker.
+
+## Chat and RAG
+
+`POST /api/v1/projects/{id}/chat` turns a question into a grounded answer:
+
+```text
+question → hybrid retrieval (same project) → numbered source context
+         → Rika system prompt → local chat model → citation validation
+         → user + assistant messages persisted
+```
+
+The system prompt defines Rika's persona and rules: use retrieved project
+evidence, cite with `[S1]`-style markers, include line ranges when available,
+never invent a path or citation, separate inference from evidence, report
+conflicting sources, and state when the evidence is insufficient. Retrieved
+chunks are wrapped in `<retrieved_context>` with one numbered `<source>` element
+per chunk. Their closing tags are escaped, and the system prompt explicitly
+treats the whole block as untrusted data whose instructions must never override
+Rika's rules.
+
+Every marker is validated after generation against the sources actually
+included in the prompt. Valid markers become citations carrying `chunk_id`,
+`document_id`, `file_path`, `symbol_name`, `start_line`/`end_line`,
+`page_number`, `language`, `content_type`, a snippet and retrieval scores.
+Unknown markers such as `[S99]` are removed from the answer; `warnings` reports
+`invalid_citations_removed` and `no_valid_citations` when no grounded citation
+remains. If retrieval finds nothing, Rika returns a fixed "not enough evidence"
+answer without calling the model.
+
+Conversation history is read and written only inside the conversation's
+project. A conversation id from another project is a 404. The first question
+becomes the title. Messages carry an explicit per-conversation `position`, so a
+question and its answer saved in one transaction keep their order.
+
+```json
+{
+  "message": "Where is the archive path validated?",
+  "conversation_id": null,
+  "stream": false,
+  "filters": {"document_type": "code"}
+}
+```
+
+Omit `conversation_id` to create a conversation; pass it to continue one.
+`filters` accepts the same metadata filters as search.
+
+### Streaming
+
+With `"stream": true` the endpoint returns `text/event-stream`:
+
+| Event | Data |
+|---|---|
+| `start` | `project_id`, `conversation_id`, `retrieved_chunks` |
+| `token` | `delta` — append to the answer |
+| `citations` | `citations` — validated citations |
+| `done` | the full JSON response, including the final `answer` |
+| `error` | `code`, `message`; the failed turn was not saved |
+
+Tokens are generated before citation validation can run. Clients should render
+`done.answer` when it arrives: it is the cleaned text with invented markers
+removed. A model failure after the stream has started becomes an `error` event,
+not an HTTP error.
+
+### Conversations
+
+`GET /api/v1/conversations` lists conversations newest first. Pass
+`project_id` to scope the list to one project; every item also carries its
+project id. `GET /api/v1/conversations/{id}` returns the messages with their
+stored citations, and `DELETE` removes the conversation and its messages.
+Both detail and delete accept an optional `project_id` guard and return 404 if
+the conversation belongs elsewhere.
 
 ## Database
 
@@ -303,6 +383,12 @@ index. PostgreSQL keeps it in sync on every chunk insert, so ingestion needs no
 second write and re-indexing cannot leave a stale keyword index. Keyword
 retrieval queries it with `websearch_to_tsquery('simple', ...)`.
 
+Migration `0004` adds `messages.position` with a unique
+`(conversation_id, position)` constraint. `created_at` is the transaction
+timestamp on PostgreSQL, so a question and its answer would otherwise tie;
+existing rows are backfilled in timestamp order before the constraint is
+created.
+
 ## Configuration
 
 All settings come from environment variables or `.env` (environment wins). See
@@ -317,6 +403,11 @@ All settings come from environment variables or `.env` (environment wins). See
 | `EMBEDDING_DIMENSION` | `1024` | Must match the model's output and the vector column |
 | `EMBEDDING_BATCH_SIZE` | `16` | Chunks embedded per request |
 | `EMBEDDING_TIMEOUT` | `120` | Seconds allowed per embedding batch |
+| `CHAT_TIMEOUT` | `120` | Seconds allowed per chat request |
+| `CHAT_MAX_TOKENS` | `768` | Maximum generated answer length |
+| `CHAT_CONTEXT_MAX_CHARS` | `6000` | Retrieved evidence budget per prompt |
+| `CHAT_HISTORY_MAX_CHARS` | `2000` | Prior-turn budget per prompt |
+| `CHAT_PROMPT_MAX_CHARS` | `12000` | Whole-prompt ceiling before the reply |
 | `STORAGE_ROOT` | `storage` | Uploads, extracted text, temp, backups |
 | `MAX_UPLOAD_MB` | `100` | Per-file upload limit |
 | `MAX_ARCHIVE_FILES` / `MAX_ARCHIVE_EXPANDED_MB` | `5000` / `1000` | ZIP safety limits |
@@ -416,15 +507,16 @@ backend/app/
   main.py              FastAPI app factory, lifespan, error handlers
   config.py            pydantic-settings
   cli.py               check-config / check-models / check-worker
-  api/routes/          HTTP routes (health, projects, documents, uploads, jobs, search)
+  api/routes/          HTTP routes (health, projects, documents, uploads, jobs, search, chat, conversations)
   api/v1/              versioned API router
   core/                logging, errors, middleware, constants
   database/            async engine, session, models, Alembic migrations
   ingestion/           formats, parsers, chunking, embeddings, archive safety, pipeline
   code_intelligence/   Tree-sitter access, symbols, dependencies, symbol-aware chunking
   retrieval/           vector/keyword search, metadata filters, RRF fusion, metrics
-  llm/                 llama-server client
-  services/            project, document, upload, job and retrieval services; system probes
+  rag/                 Rika persona, context assembly, citation parsing and validation
+  llm/                 llama-server client (completion + SSE streaming)
+  services/            project, document, upload, job, retrieval, conversation and chat services
   workers/             Celery app + tasks
 backend/tests/
 backend/evaluation/    curated retrieval cases and the baseline runner
@@ -448,8 +540,10 @@ needed. Parser tests build real PDF, DOCX, PPTX and XLSX files in a temporary
 directory, and code-intelligence tests cover symbol ranges, parents, routes,
 imports and the symbol-aware chunker. Retrieval tests cover RRF fusion and
 deduplication, every metadata filter, project scope, query-vector width
-refusal and the evaluation metrics. The health tests assert that probes fail
-*gracefully* and that readiness maps critical failures to 503.
+refusal and the evaluation metrics. Chat tests cover prompt assembly, citation
+validation and rejection, project isolation, follow-ups, streaming events and
+failure cleanup. The health tests assert that probes fail *gracefully* and
+that readiness maps critical failures to 503.
 
 SQLite cannot prove pgvector, JSONB or database-level cascades, so the same
 tests can run against a migrated PostgreSQL database. Point
@@ -485,7 +579,7 @@ cd backend
 | 5 — Code intelligence | Done: Tree-sitter symbols, routes, imports, parent links and symbol-aware chunking |
 | 6 — Chunking and embeddings | Done: batched embeddings, 1024-dim `vector` column, HNSW index, model identity per chunk |
 | 7 — Retrieval | Done: pgvector + full-text search, metadata filters, RRF fusion, citations, evaluation baseline |
-| 8 — RAG and answer generation | Planned |
+| 8 — RAG and answer generation | Done: Rika prompt, grounded answers, validated citations, conversations, SSE streaming |
 | 9 — Frontend | Planned |
 | 10–12 — Intelligence, hardening, packaging | Planned |
 
@@ -498,6 +592,12 @@ cd backend
   `alembic upgrade head` against that database first.
 - **Search fails mentioning `search_vector`** — the database predates migration
   `0003`; run `.\scripts\migrate.ps1` (or `alembic upgrade head`).
+- **Chat fails mentioning `messages.position`** — the database predates
+  migration `0004`; run `.\scripts\migrate.ps1` (or `alembic upgrade head`).
+- **Chat returns HTTP 502 or an SSE `error` event** — the chat model server is
+  not answering. Start it with `.\scripts\llama-local.ps1 -Action start` and
+  check `.tools\llama-logs\chat.log`; the embedding server is still needed for
+  retrieval, so both must be up.
 - **Readiness says `unavailable` with `postgres`/`redis` errors** — containers
   are not running, or `DATABASE_URL` disagrees with `POSTGRES_*`. Without Docker,
   start the portable services first: `postgres-local.ps1 -Action start` and

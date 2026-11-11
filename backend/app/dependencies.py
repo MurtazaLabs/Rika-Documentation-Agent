@@ -40,3 +40,12 @@ def get_embedding_client(request: Request) -> ModelServerClient:
     deterministic client without starting the lifespan.
     """
     return get_resources(request).embedding_client
+
+
+def get_chat_client(request: Request) -> ModelServerClient:
+    """FastAPI dependency for the shared chat client.
+
+    Separate from :func:`get_resources` for the same reason as the embedding
+    client: tests replace it with a scripted model.
+    """
+    return get_resources(request).chat_client

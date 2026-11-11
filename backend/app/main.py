@@ -78,7 +78,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         chat_client = ModelServerClient(
             settings.chat_base_url,
             settings.chat_model_name,
-            timeout=settings.model_request_timeout,
+            timeout=settings.chat_timeout,
         )
         embedding_client = ModelServerClient(
             settings.embedding_base_url,

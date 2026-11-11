@@ -47,10 +47,27 @@ class Settings(BaseSettings):
     embedding_dimension: int | None = None
 
     model_request_timeout: float = 30.0
+    # Local chat generation is much slower than a metadata request, especially
+    # with partial GPU offload, so it gets its own deadline.
+    chat_timeout: float = 120.0
     # Embedding batches are much larger than a chat reply and run on the CPU,
     # so they get their own, more generous, deadline.
     embedding_timeout: float = 120.0
     readiness_timeout: float = 2.0
+
+    # Chat and RAG. Chunk and history budgets are characters rather than
+    # tokens because the local model's tokenizer is not part of this service.
+    chat_temperature: float = 0.2
+    chat_max_tokens: int = 768
+    chat_context_chunks: int = 8
+    chat_context_max_chars: int = 6000
+    chat_history_messages: int = 10
+    chat_history_max_chars: int = 2000
+    chat_retrieval_history_turns: int = 2
+    # Whole-prompt ceiling. A 4K-context model needs room for the reply, so the
+    # default leaves roughly 3K tokens for the prompt at ~4 characters/token.
+    chat_prompt_max_chars: int = 12000
+    chat_question_max_chars: int = 3000
 
     # Storage
     storage_root: Path = REPO_ROOT / "storage"
@@ -94,6 +111,40 @@ class Settings(BaseSettings):
     def _check_batch_size(cls, value: int) -> int:
         if value < 1:
             raise ValueError("EMBEDDING_BATCH_SIZE must be at least 1")
+        return value
+
+    @field_validator("chat_temperature")
+    @classmethod
+    def _check_temperature(cls, value: float) -> float:
+        if not 0.0 <= value <= 2.0:
+            raise ValueError("CHAT_TEMPERATURE must be between 0 and 2")
+        return value
+
+    @field_validator("chat_max_tokens", "chat_context_chunks")
+    @classmethod
+    def _check_positive_chat_limit(cls, value: int) -> int:
+        if value < 1:
+            raise ValueError("chat token and context limits must be at least 1")
+        return value
+
+    @field_validator(
+        "chat_context_max_chars",
+        "chat_history_max_chars",
+        "chat_timeout",
+        "chat_prompt_max_chars",
+        "chat_question_max_chars",
+    )
+    @classmethod
+    def _check_positive_chat_budget(cls, value: float) -> float:
+        if value <= 0:
+            raise ValueError("chat time and character budgets must be positive")
+        return value
+
+    @field_validator("chat_history_messages", "chat_retrieval_history_turns")
+    @classmethod
+    def _check_non_negative_chat_history(cls, value: int) -> int:
+        if value < 0:
+            raise ValueError("chat history limits must not be negative")
         return value
 
     @field_validator("log_level")

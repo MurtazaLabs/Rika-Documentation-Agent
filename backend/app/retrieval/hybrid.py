@@ -12,6 +12,7 @@ by both signals appears once with both component scores.
 
 from __future__ import annotations
 
+import uuid
 from dataclasses import dataclass, field
 
 from app.retrieval.types import ChunkCandidate, RetrievedChunk
@@ -47,7 +48,7 @@ def reciprocal_rank_fusion(
     k: int = RRF_K,
 ) -> list[RetrievedChunk]:
     """Fuse two ranked lists, deduplicate by chunk id and cut to ``limit``."""
-    merged: dict[object, _Merged] = {}
+    merged: dict[uuid.UUID, _Merged] = {}
 
     for rank, hit in enumerate(vector_hits, start=1):
         entry = merged.get(hit.chunk.id)
@@ -102,7 +103,7 @@ def rank_hits(
     hits: list[ChunkCandidate], *, source: str, limit: int
 ) -> list[RetrievedChunk]:
     """Rank one signal's hits without fusion (used by ``mode=vector|keyword``)."""
-    seen: set[object] = set()
+    seen: set[uuid.UUID] = set()
     results: list[RetrievedChunk] = []
     for hit in hits:
         if hit.chunk.id in seen:
