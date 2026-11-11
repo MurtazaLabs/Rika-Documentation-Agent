@@ -18,6 +18,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.config import Settings
+from app.core.exceptions import PayloadTooLargeError
 from app.database.models import (
     Document,
     DocumentChunk,
@@ -26,6 +27,7 @@ from app.database.models import (
     ProjectDependency,
     ProjectSymbol,
 )
+from app.ingestion.archive import extract_zip
 from app.ingestion.pipeline import run_ingestion
 from app.services import job_service
 from tests.conftest import FakeEmbeddingClient
@@ -337,6 +339,55 @@ async def test_zip_file_count_limit(
 
     assert response.status_code == 413
     assert response.json()["error"]["code"] == "file_too_large"
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        ".env",
+        ".env.production",
+        "credentials.json",
+        "id_rsa",
+        "deploy.key",
+        "service-account-ci.json",
+    ],
+)
+async def test_credential_files_are_never_indexed(
+    client: AsyncClient, name: str
+) -> None:
+    project_id = await create_project(client)
+
+    response = await upload(client, project_id, name, b"TOKEN=secret-value")
+
+    assert response.status_code == 422, response.text
+    assert response.json()["error"]["code"] == "invalid_upload"
+    assert "credentials" in response.json()["error"]["message"].lower()
+
+
+async def test_environment_template_is_indexable(client: AsyncClient) -> None:
+    project_id = await create_project(client)
+
+    response = await upload(client, project_id, ".env.example", b"APP_NAME=Rika\n")
+
+    assert response.status_code == 201, response.text
+    assert len(response.json()["items"]) == 1
+
+
+async def test_zip_bomb_is_refused(tmp_path: Path) -> None:
+    archive = make_zip({"bomb.txt": b"\x00" * (12 * 1024 * 1024)})
+    zip_path = tmp_path / "bomb.zip"
+    zip_path.write_bytes(archive)
+
+    with pytest.raises(PayloadTooLargeError) as caught:
+        # A generous size cap, so only the compression ratio can reject it.
+        extract_zip(
+            zip_path,
+            tmp_path / "out",
+            max_files=10,
+            max_expanded_bytes=50 * 1024 * 1024,
+        )
+
+    assert "compression ratio" in str(caught.value).lower()
 
 
 async def test_non_zip_upload_is_rejected(client: AsyncClient) -> None:

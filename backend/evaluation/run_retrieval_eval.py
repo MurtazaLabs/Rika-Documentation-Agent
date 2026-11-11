@@ -14,6 +14,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -70,6 +71,16 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         default=None,
         help="Optional path for the JSON report.",
+    )
+    parser.add_argument(
+        "--min-recall",
+        type=float,
+        default=None,
+        metavar="TARGET",
+        help=(
+            "Exit 1 when aggregate Recall@5 is below TARGET, e.g. 0.85. "
+            "Use it as a regression gate on a full-repository index."
+        ),
     )
     args = parser.parse_args()
     if not 1 <= args.k <= 50:
@@ -134,11 +145,21 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
     return report
 
 
-def main() -> None:
+def main() -> int:
     args = parse_args()
     report = asyncio.run(run(args))
     print(json.dumps(report, indent=2, ensure_ascii=False))
+    if args.min_recall is None:
+        return 0
+    recall = report["aggregate"]["recall@5"]
+    passed = recall >= args.min_recall
+    print(
+        f"{'PASS' if passed else 'FAIL'} recall@5 {recall:.3f} "
+        f"(target {args.min_recall:.2f})",
+        file=sys.stderr,
+    )
+    return 0 if passed else 1
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

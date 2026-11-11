@@ -24,7 +24,12 @@ from app.core.exceptions import InvalidUploadError, PayloadTooLargeError
 from app.database.models import Document, FileVersion, IngestionJob
 from app.database.models.enums import DocumentStatus, JobStatus, JobType
 from app.ingestion.archive import extract_zip
-from app.ingestion.formats import FileFormat, format_for, supported_extensions
+from app.ingestion.formats import (
+    FileFormat,
+    format_for,
+    is_secret_path,
+    supported_extensions,
+)
 from app.ingestion.paths import filename_of, safe_relative_path
 from app.services import project_service
 
@@ -363,6 +368,11 @@ async def _replace_contents(
 
 
 def _require_supported(original_path: str) -> FileFormat:
+    if is_secret_path(original_path):
+        raise InvalidUploadError(
+            f"{original_path} is a credentials file and is never indexed. "
+            "Upload an environment template such as .env.example instead."
+        )
     format_ = format_for(original_path)
     if format_ is None:
         extension = Path(original_path).suffix.lower() or "(none)"

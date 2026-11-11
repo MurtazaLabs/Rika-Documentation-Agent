@@ -207,6 +207,10 @@ drive letters rejected), symlinks and encrypted entries are refused, and file
 count, expanded size and compression ratio are capped (`MAX_ARCHIVE_FILES`,
 `MAX_ARCHIVE_EXPANDED_MB`). A rejected request leaves no rows and no files.
 
+Credentials are never indexed: `.env` and its variants, private keys (`*.pem`,
+`*.key`, `id_rsa`), `credentials.json` and service-account files are rejected
+with an explanation, while templates such as `.env.example` stay indexable.
+
 **Incremental behaviour.** Identical content is skipped as a duplicate; a
 changed file at a known path replaces its bytes and its index; re-indexing
 replaces the old chunks, symbols and dependencies instead of appending to them.
@@ -292,6 +296,11 @@ The report contains per-case and aggregate Recall@5, Recall@10, precision,
 citation correctness and duplicate result frequency. Add `--mode vector` or
 `--mode keyword` to record single-signal baselines before considering a
 reranker.
+
+Pass `--min-recall 0.85` to turn the plan's target into a gate: the command
+exits 1 when aggregate Recall@5 falls below it, so a retrieval change cannot
+quietly regress the baseline. Only treat the number as meaningful on an index
+of the whole repository — a partial index measures the partial index.
 
 ## Chat and RAG
 
@@ -480,6 +489,8 @@ All settings come from environment variables or `.env` (environment wins). See
 | `STORAGE_ROOT` | `storage` | Uploads, extracted text, temp, backups |
 | `MAX_UPLOAD_MB` | `100` | Per-file upload limit |
 | `MAX_ARCHIVE_FILES` / `MAX_ARCHIVE_EXPANDED_MB` | `5000` / `1000` | ZIP safety limits |
+| `CHAT_MAX_CONCURRENCY` | `1` | Simultaneous chat requests held by this process |
+| `EMBEDDING_MAX_CONCURRENCY` | `1` | Simultaneous embedding requests per client |
 | `CHUNK_SIZE_CHARS` / `CHUNK_OVERLAP_CHARS` | `1200` / `200` | Chunk window and overlap |
 
 `POSTGRES_*` in `.env` also configures the Compose containers; keep them in sync
@@ -695,8 +706,9 @@ cd backend
 | 7 — Retrieval | Done: pgvector + full-text search, metadata filters, RRF fusion, citations, evaluation baseline |
 | 8 — RAG and answer generation | Done: Rika prompt, grounded answers, validated citations, conversations, SSE streaming |
 | 9 — Frontend | Done: dashboard, project workspaces, file explorer with source preview, search, streaming chat with citation jump-to-line, conversations, settings |
-| 10 — Project intelligence | Done: overview, architecture, code analysis, documentation comparison and bug investigation as an API, plus an Intelligence tab in the UI that shows every report and opens any finding at its source line; grounding chat answers in these reports is still pending |
-| 11–12 — Hardening, packaging | Planned |
+| 10 — Project intelligence | Done: overview, architecture, code analysis, documentation comparison and bug investigation as an API, an Intelligence tab in the UI that shows every report and opens any finding at its source line, and chat answers that cite those findings |
+| 11 — Hardening | In progress: credential files excluded from the index, per-model concurrency caps, a `--min-recall` evaluation gate; a full-repository Recall@5 measurement is still open |
+| 12 — Packaging | Planned |
 
 ## Troubleshooting
 

@@ -79,6 +79,40 @@ _add(_code("svelte"), ".svelte")
 # stored in the project index by accident.
 ENV_TEMPLATES = {".env.example", ".env.sample", ".env.template"}
 
+# Credentials that must never reach the index. Extensions alone do not catch
+# these: ``credentials.json`` and ``id_rsa`` are otherwise ordinary files.
+SECRET_NAMES = frozenset(
+    {
+        ".envrc",
+        ".netrc",
+        ".npmrc",
+        ".pypirc",
+        ".htpasswd",
+        "id_dsa",
+        "id_ecdsa",
+        "id_ed25519",
+        "id_rsa",
+        "credentials.json",
+        "secrets.json",
+        "secrets.yaml",
+        "secrets.yml",
+        "terraform.tfstate",
+    }
+)
+SECRET_SUFFIXES = frozenset({".pem", ".key", ".p12", ".pfx", ".jks", ".keystore"})
+
+
+def is_secret_path(filename: str) -> bool:
+    """True when a filename is a credentials container rather than content."""
+    name = PurePosixPath(filename).name.lower()
+    if name in ENV_TEMPLATES:
+        return False
+    if name == ".env" or name.startswith(".env."):
+        return True
+    if name.startswith("service-account") and name.endswith(".json"):
+        return True
+    return name in SECRET_NAMES or PurePosixPath(name).suffix in SECRET_SUFFIXES
+
 
 def format_for(filename: str) -> FileFormat | None:
     """Return the format for a filename, or ``None`` when unsupported."""

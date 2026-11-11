@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 
 import httpx
@@ -122,3 +123,27 @@ async def test_non_streaming_chat_returns_content() -> None:
         await http.aclose()
 
     assert answer == "The answer [S1]."
+
+
+async def test_requests_wait_for_a_free_slot() -> None:
+    state = {"active": 0, "peak": 0}
+
+    async def handler(_: httpx.Request) -> httpx.Response:
+        state["active"] += 1
+        state["peak"] = max(state["peak"], state["active"])
+        await asyncio.sleep(0.02)
+        state["active"] -= 1
+        return httpx.Response(
+            200, json={"data": [{"index": 0, "embedding": [0.1, 0.2]}]}
+        )
+
+    http = httpx.AsyncClient(base_url="http://model", transport=httpx.MockTransport(handler))
+    model = ModelServerClient(
+        "http://model", "test-model", client=http, max_concurrency=1
+    )
+    try:
+        await asyncio.gather(*(model.embed([f"text {index}"]) for index in range(4)))
+    finally:
+        await http.aclose()
+
+    assert state["peak"] == 1

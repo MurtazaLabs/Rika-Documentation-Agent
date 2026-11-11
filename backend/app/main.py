@@ -79,11 +79,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             settings.chat_base_url,
             settings.chat_model_name,
             timeout=settings.chat_timeout,
+            max_concurrency=settings.chat_max_concurrency,
         )
         embedding_client = ModelServerClient(
             settings.embedding_base_url,
             settings.embedding_model_name,
             timeout=settings.model_request_timeout,
+            max_concurrency=settings.embedding_max_concurrency,
         )
 
         app.state.resources = AppResources(

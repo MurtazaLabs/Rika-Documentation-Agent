@@ -8,6 +8,7 @@ available both as a single response and as a stream of content deltas.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from typing import Any, AsyncIterator, Sequence
@@ -31,12 +32,24 @@ class ModelServerClient:
         *,
         timeout: float = 30.0,
         client: httpx.AsyncClient | None = None,
+        max_concurrency: int = 1,
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.model_name = model_name
         self.timeout = timeout
         self._client = client
         self._owns_client = client is None
+        # One slot on a 4 GB card: the server has no room for parallel
+        # generations, so extra work waits here instead of thrashing VRAM.
+        self.max_concurrency = max(1, max_concurrency)
+        self._slots: asyncio.Semaphore | None = None
+
+    def _semaphore(self) -> asyncio.Semaphore:
+        """Created on first use: a primitive made at import time would bind to
+        whichever loop happened to load the module (tests use one per case)."""
+        if self._slots is None:
+            self._slots = asyncio.Semaphore(self.max_concurrency)
+        return self._slots
 
     # -- lifecycle ---------------------------------------------------------
     def _http(self) -> httpx.AsyncClient:
@@ -53,6 +66,10 @@ class ModelServerClient:
 
     # -- requests ----------------------------------------------------------
     async def _request(self, method: str, path: str, **kwargs: Any) -> Any:
+        async with self._semaphore():
+            return await self._send(method, path, **kwargs)
+
+    async def _send(self, method: str, path: str, **kwargs: Any) -> Any:
         try:
             response = await self._http().request(method, path, **kwargs)
         except httpx.HTTPError as exc:
@@ -130,6 +147,20 @@ class ModelServerClient:
         return content
 
     async def chat_stream(
+        self,
+        messages: Sequence[ChatMessage],
+        *,
+        temperature: float = 0.2,
+        max_tokens: int = 512,
+    ) -> AsyncIterator[str]:
+        """Yield content deltas, holding a slot for the whole generation."""
+        async with self._semaphore():
+            async for chunk in self._stream(
+                messages, temperature=temperature, max_tokens=max_tokens
+            ):
+                yield chunk
+
+    async def _stream(
         self,
         messages: Sequence[ChatMessage],
         *,

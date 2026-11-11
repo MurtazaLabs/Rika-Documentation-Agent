@@ -54,6 +54,10 @@ class Settings(BaseSettings):
     # so they get their own, more generous, deadline.
     embedding_timeout: float = 120.0
     readiness_timeout: float = 2.0
+    # Simultaneous requests per model server. One slot matches the 4 GB GPU:
+    # extra work waits in this process instead of queuing inside llama.cpp.
+    chat_max_concurrency: int = 1
+    embedding_max_concurrency: int = 1
 
     # Chat and RAG. Chunk and history budgets are characters rather than
     # tokens because the local model's tokenizer is not part of this service.

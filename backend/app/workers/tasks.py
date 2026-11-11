@@ -37,6 +37,7 @@ async def _run_ingestion(job_id: uuid.UUID) -> dict[str, Any]:
         settings.embedding_base_url,
         settings.embedding_model_name,
         timeout=settings.embedding_timeout,
+        max_concurrency=settings.embedding_max_concurrency,
     )
     try:
         session_factory = create_session_factory(engine)
