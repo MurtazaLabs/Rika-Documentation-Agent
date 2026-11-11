@@ -223,14 +223,20 @@ async def test_unknown_document_returns_404(client: AsyncClient) -> None:
     assert response.status_code == 404
 
 
-async def test_deleting_project_removes_its_documents(
-    client: AsyncClient, session_factory: async_sessionmaker[AsyncSession]
+async def test_deleting_project_removes_its_documents_and_files(
+    client: AsyncClient,
+    session_factory: async_sessionmaker[AsyncSession],
+    app_settings,
 ) -> None:
     project = await _create_project(client)
     document_id = await _add_document(session_factory, project["id"], "src/app.py")
+    project_dir = app_settings.uploads_root / project["id"]
+    project_dir.mkdir(parents=True)
+    (project_dir / "private.txt").write_text("private project data", encoding="utf-8")
 
     delete_response = await client.delete(f"/api/v1/projects/{project['id']}")
     assert delete_response.status_code == 204
 
     document_response = await client.get(f"/api/v1/documents/{document_id}")
     assert document_response.status_code == 404
+    assert not project_dir.exists()

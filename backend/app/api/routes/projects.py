@@ -7,6 +7,7 @@ import uuid
 from fastapi import APIRouter, Depends, Query, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import Settings, get_settings
 from app.api.schemas.project import (
     ProjectCreate,
     ProjectList,
@@ -70,6 +71,7 @@ async def update_project(
 async def delete_project(
     project_id: uuid.UUID,
     session: AsyncSession = Depends(get_session),
+    settings: Settings = Depends(get_settings),
 ) -> Response:
-    await project_service.delete_project(session, project_id)
+    await project_service.delete_project(session, settings, project_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
