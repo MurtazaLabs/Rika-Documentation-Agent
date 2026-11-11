@@ -29,6 +29,8 @@ export const keys = {
     ["conversation", id, projectId ?? "all"] as const,
   preview: (documentId: UUID, projectId?: UUID) =>
     ["preview", documentId, projectId ?? "all"] as const,
+  intelligence: (id: UUID, part: string) =>
+    ["intelligence", id, part] as const,
   readiness: ["readiness"] as const,
   settings: ["settings"] as const,
 };
@@ -310,6 +312,72 @@ export function useChatMutation(projectId: UUID) {
       queryClient.invalidateQueries({ queryKey: ["conversations"] });
       queryClient.invalidateQueries({ queryKey: ["conversation"] });
     },
+  });
+}
+
+export function useIntelligenceOverview(projectId: UUID | undefined) {
+  return useQuery({
+    queryKey: keys.intelligence(projectId ?? "", "overview"),
+    queryFn: () => api.getIntelligenceOverview(projectId as UUID),
+    enabled: Boolean(projectId),
+  });
+}
+
+export function useIntelligenceArchitecture(projectId: UUID | undefined) {
+  return useQuery({
+    queryKey: keys.intelligence(projectId ?? "", "architecture"),
+    queryFn: () => api.getIntelligenceArchitecture(projectId as UUID),
+    enabled: Boolean(projectId),
+  });
+}
+
+export function useIntelligenceRoutes(
+  projectId: UUID | undefined,
+  method?: string,
+) {
+  return useQuery({
+    queryKey: [...keys.intelligence(projectId ?? "", "routes"), method ?? "all"],
+    queryFn: () => api.listIntelligenceRoutes(projectId as UUID, { method }),
+    enabled: Boolean(projectId),
+  });
+}
+
+export function useIntelligenceSymbols(
+  projectId: UUID | undefined,
+  params: { q?: string; symbol_type?: string; limit?: number } = {},
+) {
+  return useQuery({
+    queryKey: [...keys.intelligence(projectId ?? "", "symbols"), params],
+    queryFn: () => api.searchIntelligenceSymbols(projectId as UUID, params),
+    enabled: Boolean(projectId),
+    placeholderData: (previous) => previous,
+  });
+}
+
+export function useIntelligenceSymbol(
+  projectId: UUID | undefined,
+  symbolId: UUID | undefined,
+) {
+  return useQuery({
+    queryKey: [...keys.intelligence(projectId ?? "", "symbol"), symbolId ?? ""],
+    queryFn: () => api.getIntelligenceSymbol(projectId as UUID, symbolId as UUID),
+    enabled: Boolean(projectId) && Boolean(symbolId),
+  });
+}
+
+export function useIntelligenceDocs(projectId: UUID | undefined) {
+  return useQuery({
+    queryKey: keys.intelligence(projectId ?? "", "docs"),
+    queryFn: () => api.getIntelligenceDocs(projectId as UUID),
+    enabled: Boolean(projectId),
+  });
+}
+
+export function useIntelligenceFindings(projectId: UUID | undefined) {
+  return useQuery({
+    queryKey: keys.intelligence(projectId ?? "", "findings"),
+    queryFn: () => api.getIntelligenceFindings(projectId as UUID),
+    enabled: Boolean(projectId),
   });
 }
 

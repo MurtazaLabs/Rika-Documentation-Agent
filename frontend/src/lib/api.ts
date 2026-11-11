@@ -5,17 +5,24 @@ import type {
   Citation,
   ConversationDetail,
   ConversationList,
+  DocsReport,
   Document,
   DocumentList,
   DocumentPreview,
+  FindingsReport,
+  IntelligenceArchitecture,
+  IntelligenceOverview,
   Job,
   JobList,
   Project,
   ProjectList,
   Readiness,
+  RequestFlow,
   RuntimeSettings,
   SearchRequest,
   SearchResponse,
+  SymbolDetail,
+  SymbolHit,
   UploadResult,
   UUID,
 } from "@/lib/types";
@@ -328,6 +335,41 @@ export const deleteConversation = (conversationId: UUID, projectId?: UUID) =>
     `/api/v1/conversations/${conversationId}${query({ project_id: projectId })}`,
     { method: "DELETE" },
   );
+
+// -- project intelligence ---------------------------------------------------
+const intelligenceBase = (projectId: UUID) =>
+  `/api/v1/projects/${projectId}/intelligence`;
+
+export const getIntelligenceOverview = (projectId: UUID) =>
+  request<IntelligenceOverview>(`${intelligenceBase(projectId)}/overview`);
+
+export const getIntelligenceArchitecture = (projectId: UUID) =>
+  request<IntelligenceArchitecture>(`${intelligenceBase(projectId)}/architecture`);
+
+export const listIntelligenceRoutes = (
+  projectId: UUID,
+  params: { method?: string } = {},
+) => request<RequestFlow[]>(`${intelligenceBase(projectId)}/routes${query(params)}`);
+
+export const searchIntelligenceSymbols = (
+  projectId: UUID,
+  params: {
+    q?: string;
+    symbol_type?: string;
+    path?: string;
+    limit?: number;
+  } = {},
+) =>
+  request<SymbolHit[]>(`${intelligenceBase(projectId)}/symbols${query(params)}`);
+
+export const getIntelligenceSymbol = (projectId: UUID, symbolId: UUID) =>
+  request<SymbolDetail>(`${intelligenceBase(projectId)}/symbols/${symbolId}`);
+
+export const getIntelligenceDocs = (projectId: UUID) =>
+  request<DocsReport>(`${intelligenceBase(projectId)}/docs`);
+
+export const getIntelligenceFindings = (projectId: UUID) =>
+  request<FindingsReport>(`${intelligenceBase(projectId)}/findings`);
 
 // -- system -----------------------------------------------------------------
 export async function getReadiness(): Promise<Readiness> {

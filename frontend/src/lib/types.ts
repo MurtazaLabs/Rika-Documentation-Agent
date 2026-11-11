@@ -285,3 +285,206 @@ export interface RuntimeSettings {
   source: string;
   restart_required: boolean;
 }
+
+// -- project intelligence (§13) ---------------------------------------------
+export interface IntelligenceTotals {
+  files: number;
+  code_files: number;
+  symbols: number;
+  languages: number;
+}
+
+export interface LanguageStat {
+  language: string;
+  files: number;
+  symbols: number;
+  bytes: number;
+}
+
+export interface DirectoryStat {
+  path: string;
+  files: number;
+  symbols: number;
+  bytes: number;
+}
+
+export interface FrameworkHit {
+  name: string;
+  evidence: string[];
+  files: number;
+}
+
+export interface EntryPoint {
+  path: string;
+  kind: string;
+  detail: string | null;
+}
+
+export interface ConfigFile {
+  path: string;
+  kind: string;
+}
+
+export interface ImportantModule {
+  path: string;
+  layer: string;
+  symbols: number;
+  imported_by: number;
+  score: number;
+}
+
+export interface PackageUsage {
+  name: string;
+  files: number;
+}
+
+export interface IntelligenceDependencies {
+  internal_edges: number;
+  unresolved_edges: number;
+  external_edges: number;
+  packages: PackageUsage[];
+}
+
+export interface IntelligenceOverview {
+  project_id: UUID;
+  name: string;
+  description: string | null;
+  totals: IntelligenceTotals;
+  languages: LanguageStat[];
+  directories: DirectoryStat[];
+  frameworks: FrameworkHit[];
+  entry_points: EntryPoint[];
+  config_files: ConfigFile[];
+  important_modules: ImportantModule[];
+  dependencies: IntelligenceDependencies;
+}
+
+export interface ArchitectureLayer {
+  name: string;
+  side: string;
+  files: number;
+  symbols: number;
+  imports_out: number;
+  imported_by: number;
+}
+
+export interface LayerEdge {
+  source: string;
+  target: string;
+  count: number;
+}
+
+export interface DatabaseTable {
+  table: string;
+  model: string | null;
+  file_path: string;
+  line: number;
+  columns: string[];
+  references: string[];
+}
+
+export interface RequestFlow {
+  method: string;
+  path: string;
+  handler: string;
+  file_path: string;
+  line: number;
+  framework: string | null;
+  imports: string[];
+}
+
+export interface ResponsibilityModule {
+  path: string;
+  doc: string | null;
+  symbols: number;
+  side: string;
+}
+
+export interface Responsibility {
+  layer: string;
+  side: string;
+  modules: ResponsibilityModule[];
+}
+
+export interface IntelligenceArchitecture {
+  project_id: UUID;
+  layers: ArchitectureLayer[];
+  edges: LayerEdge[];
+  database: { tables: DatabaseTable[] };
+  request_flows: RequestFlow[];
+  responsibilities: Responsibility[];
+}
+
+export interface SymbolHit {
+  id: UUID;
+  name: string;
+  qualified_name: string;
+  symbol_type: string;
+  path: string;
+  language: string | null;
+  start_line: number;
+  end_line: number;
+  signature: string | null;
+  doc: string | null;
+}
+
+export interface ImportEdge {
+  reference: string;
+  dependency_type: string | null;
+  resolved_path: string | null;
+  external: boolean | null;
+}
+
+export interface SymbolReference {
+  path: string;
+  line: number;
+  snippet: string;
+}
+
+export interface SymbolDetail {
+  symbol: SymbolHit;
+  doc: string | null;
+  signature: string | null;
+  definition: string;
+  imports: ImportEdge[];
+  imported_by: string[];
+  related_symbols: SymbolHit[];
+  references: SymbolReference[];
+}
+
+export interface DocFinding {
+  kind: string;
+  severity: string;
+  confirmed: boolean;
+  message: string;
+  details: Record<string, unknown>;
+}
+
+export interface DocsReport {
+  project_id: UUID;
+  readme: string | null;
+  routes: { documented: number; implemented: number };
+  findings: DocFinding[];
+}
+
+export type FindingConfidence = "confirmed" | "possible";
+
+export interface IntelligenceFinding {
+  kind: string;
+  confidence: FindingConfidence;
+  severity: string;
+  message: string;
+  details: Record<string, unknown>;
+}
+
+export interface FindingsSummary {
+  confirmed: number;
+  possible: number;
+  by_kind: Record<string, number>;
+}
+
+export interface FindingsReport {
+  project_id: UUID;
+  summary: FindingsSummary;
+  findings: IntelligenceFinding[];
+}

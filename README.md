@@ -6,7 +6,7 @@ paths and line ranges — running entirely on your machine.
 
 The full specification lives in [`docs/rika-project-plan.md`](docs/rika-project-plan.md).
 
-> **Status: Phases 1–9 complete; the Phase 10 intelligence API is in place.**
+> **Status: Phases 1–10 complete; Phase 10's chat grounding is not built yet.**
 > Projects, uploads, document parsing, code intelligence, chunking, embedding,
 > ingestion jobs, hybrid retrieval and grounded chat work end to end: every
 > chunk is stored in PostgreSQL with a 1024-dimension vector and indexed with
@@ -680,7 +680,7 @@ cd backend
 | 7 — Retrieval | Done: pgvector + full-text search, metadata filters, RRF fusion, citations, evaluation baseline |
 | 8 — RAG and answer generation | Done: Rika prompt, grounded answers, validated citations, conversations, SSE streaming |
 | 9 — Frontend | Done: dashboard, project workspaces, file explorer with source preview, search, streaming chat with citation jump-to-line, conversations, settings |
-| 10 — Project intelligence | Backend done: overview, architecture, code analysis, documentation comparison, bug investigation with confirmed/possible confidence; UI and chat grounding pending |
+| 10 — Project intelligence | Done: overview, architecture, code analysis, documentation comparison and bug investigation as an API, plus an Intelligence tab in the UI that shows every report and opens any finding at its source line; grounding chat answers in these reports is still pending |
 | 11–12 — Hardening, packaging | Planned |
 
 ## Troubleshooting

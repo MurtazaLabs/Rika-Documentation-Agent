@@ -64,17 +64,7 @@ def import_analysis(facts: ProjectFacts, path: str) -> dict | None:
     if file is None or not file.is_code:
         return None
     resolver = ModuleResolver(facts.files)
-    imports = []
-    for item in file.imports:
-        target = resolver.resolve(file, item.reference)
-        imports.append(
-            {
-                "reference": item.reference,
-                "dependency_type": item.dependency_type,
-                "resolved_path": target,
-                "external": target is None and not resolver.looks_internal(item.reference),
-            }
-        )
+    imports = _import_edges(file, resolver)
     imported_by = [
         other.path
         for other in facts.code_files
@@ -87,6 +77,22 @@ def import_analysis(facts: ProjectFacts, path: str) -> dict | None:
         "imported_by": imported_by,
         "symbols": [_hit(file, symbol) for symbol in file.symbols],
     }
+
+
+def _import_edges(file: FileFacts, resolver: ModuleResolver) -> list[dict]:
+    """One row per stored import: resolved target, or external versus unresolved."""
+    edges = []
+    for item in file.imports:
+        target = resolver.resolve(file, item.reference)
+        edges.append(
+            {
+                "reference": item.reference,
+                "dependency_type": item.dependency_type,
+                "resolved_path": target,
+                "external": target is None and not resolver.looks_internal(item.reference),
+            }
+        )
+    return edges
 
 
 def _detail(facts: ProjectFacts, file: FileFacts, symbol: SymbolFact) -> dict:
@@ -106,13 +112,7 @@ def _detail(facts: ProjectFacts, file: FileFacts, symbol: SymbolFact) -> dict:
         "doc": symbol.doc,
         "signature": symbol.signature,
         "definition": definition,
-        "imports": [
-            {
-                "reference": item.reference,
-                "resolved_path": resolver.resolve(file, item.reference),
-            }
-            for item in file.imports
-        ],
+        "imports": _import_edges(file, resolver),
         "imported_by": [
             other.path
             for other in facts.code_files

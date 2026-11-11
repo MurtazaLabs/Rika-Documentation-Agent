@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useParams, usePathname, useRouter } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
 import {
+  Brain,
   FileStack,
   LayoutDashboard,
   MessagesSquare,
@@ -31,6 +32,7 @@ const TABS = [
   { segment: "files", label: "Files", icon: FileStack },
   { segment: "search", label: "Search", icon: Search },
   { segment: "chat", label: "Chat", icon: MessagesSquare },
+  { segment: "intelligence", label: "Intelligence", icon: Brain },
 ];
 
 export default function ProjectWorkspaceLayout({
