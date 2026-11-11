@@ -6,14 +6,16 @@ paths and line ranges — running entirely on your machine.
 
 The full specification lives in [`docs/rika-project-plan.md`](docs/rika-project-plan.md).
 
-> **Status: Phases 4–8 complete.** Projects, uploads, document parsing, code
+> **Status: Phases 1–9 complete.** Projects, uploads, document parsing, code
 > intelligence, chunking, embedding, ingestion jobs, hybrid retrieval and
 > grounded chat work end to end: every chunk is stored in PostgreSQL with a
 > 1024-dimension vector and indexed with HNSW, source files also produce symbols
 > and import edges, `POST /projects/{id}/search` fuses pgvector and full-text
 > results with citations, and Rika answers questions from that evidence with
-> validated citations, persisted conversations and optional streaming. The UI
-> lands in the next phase.
+> validated citations, persisted conversations and optional streaming. A
+> Next.js UI covers the same loop in a browser: projects, a file explorer with
+> source preview, search, streaming chat with citations that open the cited
+> lines, conversation history and a read-only settings page.
 
 ## Requirements
 
@@ -22,7 +24,7 @@ The full specification lives in [`docs/rika-project-plan.md`](docs/rika-project-
 | Windows | Target platform |
 | Python 3.10+ | Verified with 3.10.11 |
 | Docker Desktop | Runs PostgreSQL + pgvector and Redis (optional, see below) |
-| Node.js 20+ | Frontend, Phase 9 |
+| Node.js 20+ | Next.js UI in `frontend/` |
 | llama.cpp `llama-server` | Local chat + embedding inference |
 
 Target hardware is a 4 GB NVIDIA GPU with 16 GB RAM, so models are sized
@@ -33,11 +35,12 @@ embeddings on CPU.
 
 ```powershell
 .\scripts\setup.ps1            # venv, dependencies, .env, storage, database, migrations
-.\scripts\start.ps1 -WithWorker
+.\scripts\start.ps1 -WithWorker -WithFrontend
 ```
 
 Then check:
 
+- UI — <http://127.0.0.1:3000> (with `-WithFrontend`)
 - API docs — <http://127.0.0.1:8000/docs>
 - Liveness — <http://127.0.0.1:8000/health/live>
 - Readiness — <http://127.0.0.1:8000/health/ready>
@@ -125,6 +128,7 @@ All application endpoints live under `/api/v1`.
 | `DELETE` | `/projects/{id}` | Delete the project and everything under it |
 | `GET` | `/projects/{id}/documents` | List that project's documents only |
 | `GET` | `/documents/{id}` | Document metadata (never its server path) |
+| `GET` | `/documents/{id}/preview` | Text for the source viewer (stored file, or chunks for PDF/Office) |
 | `DELETE` | `/documents/{id}` | Remove the document, its chunks and its files |
 | `POST` | `/documents/{id}/reindex` | Queue a fresh ingestion job |
 | `POST` | `/projects/{id}/upload` | One or more files (`files`) |
@@ -138,6 +142,7 @@ All application endpoints live under `/api/v1`.
 | `GET` | `/jobs/{id}` | Job status and progress |
 | `GET` | `/projects/{id}/jobs` | List a project's jobs |
 | `POST` | `/jobs/{id}/retry` | Re-queue a failed or cancelled job |
+| `GET` | `/settings` | Read-only runtime configuration for the settings page |
 
 Errors use one shape: `{"error": {"code", "message", "details"}}`. Validation
 failures return 422, unknown ids 404, oversized uploads 413, a job that cannot
@@ -507,6 +512,38 @@ to store vectors that do not match the column width. Qwen3-Embedding-0.6B
 returns **1024**, and the repository's `.env` is already set to that value.
 With both servers up, `/health/ready` reports `ready` (all four checks `ok`).
 
+## Frontend
+
+The UI is a Next.js 16 App Router app in `frontend/` (React 19, TanStack Query,
+Tailwind 4). It holds no state of its own: everything on screen comes from
+`/api/v1`, and the chat view renders `done.answer` from the stream so invented
+citation markers never reach the page.
+
+```powershell
+cd frontend
+npm install            # once
+npm run dev            # http://127.0.0.1:3000
+npm run typecheck      # tsc --noEmit
+npm run build          # production build
+```
+
+`scripts\start.ps1 -WithFrontend` launches it in a separate window next to the
+API. The browser talks to the API directly, so `CORS_ORIGINS` must contain the
+UI origin; the default already lists `http://localhost:3000` and
+`http://127.0.0.1:3000`. Point the UI at another API with
+`NEXT_PUBLIC_API_BASE_URL` (see `frontend/.env.example`).
+
+| Route | Purpose |
+|---|---|
+| `/` | Dashboard: totals, recent projects and conversations, live health |
+| `/projects` | Project list with create, rename and delete |
+| `/projects/{id}` | Project overview: file and index counts, ask shortcut |
+| `/projects/{id}/files` | File explorer, uploads, ingestion progress, source preview |
+| `/projects/{id}/search` | Hybrid search with mode, result count and metadata filters |
+| `/projects/{id}/chat` | Streaming chat with inline citations and conversation history |
+| `/conversations` | Every thread, scoped to its project |
+| `/settings` | Read-only view of the running configuration |
+
 ## Layout
 
 ```
@@ -527,6 +564,11 @@ backend/app/
   workers/             Celery app + tasks
 backend/tests/
 backend/evaluation/    curated retrieval cases and the baseline runner
+frontend/src/
+  app/                 App Router pages: dashboard, projects, files, search, chat, conversations, settings
+  components/          chat, workspace, projects and UI primitives
+  hooks/               TanStack Query hooks over the typed API client
+  lib/                 API client, types and formatting helpers
 docker/postgres/       pgvector init script
 scripts/               setup / start / stop / migrate / backup / restore / postgres-local / redis-local
 docs/                  project plan
@@ -551,6 +593,14 @@ refusal and the evaluation metrics. Chat tests cover prompt assembly, citation
 validation and rejection, project isolation, follow-ups, streaming events and
 failure cleanup. The health tests assert that probes fail *gracefully* and
 that readiness maps critical failures to 503.
+
+The UI is checked with its own typechecker and a production build:
+
+```powershell
+cd frontend
+npm run typecheck
+npm run build
+```
 
 SQLite cannot prove pgvector, JSONB or database-level cascades, so the same
 tests can run against a migrated PostgreSQL database. Point
@@ -587,7 +637,7 @@ cd backend
 | 6 — Chunking and embeddings | Done: batched embeddings, 1024-dim `vector` column, HNSW index, model identity per chunk |
 | 7 — Retrieval | Done: pgvector + full-text search, metadata filters, RRF fusion, citations, evaluation baseline |
 | 8 — RAG and answer generation | Done: Rika prompt, grounded answers, validated citations, conversations, SSE streaming |
-| 9 — Frontend | Planned |
+| 9 — Frontend | Done: dashboard, project workspaces, file explorer with source preview, search, streaming chat with citation jump-to-line, conversations, settings |
 | 10–12 — Intelligence, hardening, packaging | Planned |
 
 ## Troubleshooting

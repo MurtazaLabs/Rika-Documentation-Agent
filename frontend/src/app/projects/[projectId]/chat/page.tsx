@@ -123,14 +123,6 @@ function ChatContent() {
     setThread(conversation.data.messages.map(toThreadMessage));
   }, [conversation.data, conversationId]);
 
-  // A question handed over from the dashboard or overview page.
-  useEffect(() => {
-    if (!askParam || askParam === lastAsk.current) return;
-    lastAsk.current = askParam;
-    setInput(askParam);
-    window.requestAnimationFrame(() => textareaRef.current?.focus());
-  }, [askParam]);
-
   useEffect(() => {
     const node = textareaRef.current;
     if (!node) return;
@@ -279,7 +271,12 @@ function ChatContent() {
         }
       }
     } catch (error) {
-      if (controller.signal.aborted) return;
+      if (controller.signal.aborted) {
+        // The turn was cancelled (navigation or component teardown); stop the
+        // placeholder so it cannot sit on "writing" forever.
+        patch({ streaming: false });
+        return;
+      }
       const message = errorMessage(
         error,
         "The answer could not be generated.",
@@ -303,6 +300,19 @@ function ChatContent() {
       focusComposer();
     }
   };
+
+  // A question handed over from the dashboard or overview page is asked
+  // immediately: landing on a page with the question sitting silently in the
+  // composer looks like the handover failed. It is scheduled instead of sent
+  // inline because StrictMode mounts, unmounts and remounts effects, and the
+  // unmount cleanup would abort a request started in the same cycle. The ref
+  // makes it run once per question either way.
+  useEffect(() => {
+    if (!askParam || askParam === lastAsk.current) return;
+    lastAsk.current = askParam;
+    setInput("");
+    window.setTimeout(() => void send(askParam), 0);
+  }, [askParam]);
 
   const confirmDelete = () => {
     if (!deleting) return;

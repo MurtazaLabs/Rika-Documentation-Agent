@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import { useEffect, useMemo, useState } from "react";
 import {
   ArrowUpRight,
   FolderKanban,
@@ -31,19 +31,21 @@ import { pluralize, relativeTime } from "@/lib/utils";
 
 function ProjectsContent() {
   const router = useRouter();
-  const searchParams = useSearchParams();
   const projects = useProjects({ limit: 200 });
   const [createOpen, setCreateOpen] = useState(false);
   const [renaming, setRenaming] = useState<Project | null>(null);
   const [deleting, setDeleting] = useState<Project | null>(null);
   const [filter, setFilter] = useState("");
 
+  // Read the shortcut from the URL in an effect rather than with
+  // useSearchParams: that hook bails this statically prerendered page out to a
+  // Suspense fallback, which then never resolves on a direct load or refresh.
   useEffect(() => {
-    if (searchParams.get("create") === "1") {
+    if (new URLSearchParams(window.location.search).get("create") === "1") {
       setCreateOpen(true);
       router.replace("/projects");
     }
-  }, [router, searchParams]);
+  }, [router]);
 
   const items = useMemo(() => {
     const all = projects.data?.items ?? [];
@@ -236,23 +238,6 @@ function ProjectsContent() {
   );
 }
 
-function ProjectsFallback() {
-  return (
-    <div className="space-y-7">
-      <div className="h-24 animate-pulse rounded-2xl bg-surface-2/40" />
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-        {[0, 1, 2, 3, 4, 5].map((index) => (
-          <CardSkeleton key={index} />
-        ))}
-      </div>
-    </div>
-  );
-}
-
 export default function ProjectsPage() {
-  return (
-    <Suspense fallback={<ProjectsFallback />}>
-      <ProjectsContent />
-    </Suspense>
-  );
+  return <ProjectsContent />;
 }

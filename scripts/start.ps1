@@ -5,15 +5,19 @@
 .PARAMETER WithWorker
     Also launch a Celery worker in a separate window.
 
+.PARAMETER WithFrontend
+    Also launch the Next.js UI in a separate window (http://127.0.0.1:3000).
+
 .PARAMETER NoInfrastructure
     Skip docker compose (already running, or managed elsewhere).
 
 .EXAMPLE
-    .\scripts\start.ps1 -WithWorker
+    .\scripts\start.ps1 -WithWorker -WithFrontend
 #>
 [CmdletBinding()]
 param(
     [switch]$WithWorker,
+    [switch]$WithFrontend,
     [switch]$NoInfrastructure
 )
 
@@ -63,9 +67,29 @@ if ($WithWorker) {
     Write-Host "Celery worker started in a separate window." -ForegroundColor Cyan
 }
 
+if ($WithFrontend) {
+    $frontend = Join-Path $root "frontend"
+    if (-not (Test-Path (Join-Path $frontend "node_modules"))) {
+        Write-Warning "Frontend dependencies missing. Run: cd frontend; npm install"
+    }
+    elseif (-not (Get-Command npm -ErrorAction SilentlyContinue)) {
+        Write-Warning "npm not found. Install Node.js 20+ to run the UI."
+    }
+    else {
+        # cmd /c keeps npm.cmd resolvable from a detached window.
+        Start-Process -FilePath "cmd.exe" `
+            -ArgumentList "/c npm run dev" `
+            -WorkingDirectory $frontend
+        Write-Host "Next.js UI started in a separate window." -ForegroundColor Cyan
+    }
+}
+
 Write-Host "API:      http://127.0.0.1:8000" -ForegroundColor Green
 Write-Host "Docs:     http://127.0.0.1:8000/docs" -ForegroundColor Green
 Write-Host "Health:   http://127.0.0.1:8000/health/ready" -ForegroundColor Green
+if ($WithFrontend) {
+    Write-Host "UI:       http://127.0.0.1:3000" -ForegroundColor Green
+}
 Write-Host "Press Ctrl+C to stop." -ForegroundColor DarkGray
 
 & $py -m uvicorn app.main:app --app-dir backend --host 127.0.0.1 --port 8000 --reload
